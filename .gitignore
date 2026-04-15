@@ -1,0 +1,32 @@
+# Build results
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.userprefs
+
+# NuGet
+*.nupkg
+packages/
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+~*

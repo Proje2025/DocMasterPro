@@ -1,0 +1,511 @@
+<Window x:Class="DocConverter.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:DocConverter.ViewModels"
+        xmlns:conv="clr-namespace:DocConverter.Converters"
+        Title="DocMaster Pro — Tüm Dosya Dönüştürme İşlemleri"
+        Height="700" Width="1000"
+        MinHeight="600" MinWidth="900"
+        AllowDrop="True"
+        WindowStartupLocation="CenterScreen">
+
+  <Window.DataContext>
+    <vm:MainViewModel/>
+  </Window.DataContext>
+
+  <Window.Resources>
+    <conv:StatusColorConverter x:Key="StatusColor"/>
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+    <!-- Ortak Buton Stili -->
+    <Style x:Key="PrimaryButton" TargetType="Button">
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="Margin" Value="4"/>
+      <Setter Property="MinWidth" Value="120"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Background" Value="#4A90D9"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    CornerRadius="4" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SecondaryButton" TargetType="Button">
+      <Setter Property="Padding" Value="12,6"/>
+      <Setter Property="Margin" Value="4"/>
+      <Setter Property="MinWidth" Value="100"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Background" Value="#E0E0E0"/>
+      <Setter Property="Foreground" Value="#333"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    CornerRadius="4" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="DangerButton" TargetType="Button">
+      <Setter Property="Padding" Value="6,2"/>
+      <Setter Property="Background" Value="#DC3545"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Content" Value="✕"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    CornerRadius="10" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="TabHeaderStyle" TargetType="TabItem">
+      <Setter Property="Padding" Value="20,10"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- Dosya Listesi Item -->
+    <DataTemplate x:Key="FileListItemTemplate">
+      <Grid Margin="2">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="80"/>
+          <ColumnDefinition Width="50"/>
+          <ColumnDefinition Width="100"/>
+          <ColumnDefinition Width="30"/>
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" Width="4" CornerRadius="2" Margin="0,0,8,0"
+                Background="{Binding Status, Converter={StaticResource StatusColor}}"/>
+        <TextBlock Grid.Column="1" Text="{Binding FileName}" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" ToolTip="{Binding FilePath}"/>
+        <TextBlock Grid.Column="2" Text="{Binding FileSizeFormatted}" VerticalAlignment="Center"
+                   Foreground="Gray" HorizontalAlignment="Center"/>
+        <TextBlock Grid.Column="3" Text="{Binding PageCount}" VerticalAlignment="Center"
+                   Foreground="Gray" HorizontalAlignment="Center"/>
+        <Border Grid.Column="4" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center"
+                Background="{Binding Status, Converter={StaticResource StatusColor}}">
+          <TextBlock Text="{Binding Status}" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
+        </Border>
+        <Button Grid.Column="5" Style="{StaticResource DangerButton}"
+                Command="{Binding DataContext.RemoveFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                CommandParameter="{Binding}" ToolTip="Dosyayı kaldır"/>
+      </Grid>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Grid>
+    <TabControl x:Name="MainTabs" Margin="8">
+      <!-- Tab 1: PDF Birleştirme -->
+      <TabItem Header="📄 PDF Birleştir" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="PDF dosyalarını tek bir dosyada birleştirin (sürükle-bırak ile sıralayabilirsiniz)"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
+                  Background="#FAFAFA" AllowDrop="True"
+                  Drop="MergeTab_Drop" DragEnter="MergeTab_DragEnter">
+            <ListView ItemsSource="{Binding MergeDocuments}"
+                      ItemTemplate="{StaticResource FileListItemTemplate}"
+                      BorderThickness="0" Background="Transparent"
+                      Margin="8"
+                      PreviewMouseLeftButtonDown="ListView_PreviewMouseLeftButtonDown"
+                      MouseMove="ListView_MouseMove"
+                      Drop="ListView_Drop"
+                      Tag="Merge"/>
+          </Border>
+
+          <ProgressBar Grid.Row="2" Minimum="0" Maximum="100"
+                       Value="{Binding Progress}" Height="8" Margin="0,8,0,4"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Dosya Ekle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding AddFilesCommand}"/>
+            <Button Content="Birleştir" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding MergeCommand}"
+                    Background="#28A745"/>
+            <Button Content="Temizle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding ClearMergeCommand}"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- Tab 2: PDF Bölme -->
+      <TabItem Header="✂️ PDF Böl" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="PDF dosyasını sayfa aralıklarına göre bölün"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button Content="PDF Seç" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding OpenPdfForSplitCommand}"/>
+            <TextBlock Text="{Binding SplitPdfPath}" VerticalAlignment="Center"
+                       Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
+                       MaxWidth="500" ToolTip="{Binding SplitPdfPath}"/>
+          </StackPanel>
+
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Sayfa Aralığı:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox Text="{Binding PageRangeText, UpdateSourceTrigger=PropertyChanged}"
+                     Width="300" FontSize="14" ToolTip="Örnek: 1-3, 5-7, 10-15"/>
+            <TextBlock Text="(virgül ile ayırın)" VerticalAlignment="Center"
+                       Foreground="Gray" Margin="8,0,0,0"/>
+          </StackPanel>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Çıkış Klasörü:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock Text="{Binding SplitOutputFolder}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" MaxWidth="400"
+                       Foreground="Gray"/>
+          </StackPanel>
+
+          <ListBox Grid.Row="4" ItemsSource="{Binding SplitRanges}"
+                   BorderBrush="#CCC" Margin="0,0,0,12">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Margin="4"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="PDF Böl" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding SplitCommand}"
+                    Background="#17A2B8"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- Tab 3: Görüntü → PDF -->
+      <TabItem Header="🖼️ Görüntüden PDF" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="JPG, PNG, BMP, GIF, TIFF, WEBP görüntülerini PDF'e dönüştürün"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
+                  Background="#FAFAFA" AllowDrop="True"
+                  Drop="ImageTab_Drop" DragEnter="MergeTab_DragEnter">
+            <ListView ItemsSource="{Binding ImageDocuments}"
+                      ItemTemplate="{StaticResource FileListItemTemplate}"
+                      BorderThickness="0" Background="Transparent" Margin="8"
+                      PreviewMouseLeftButtonDown="ListView_PreviewMouseLeftButtonDown"
+                      MouseMove="ListView_MouseMove"
+                      Drop="ImageListView_Drop"
+                      Tag="Image"/>
+          </Border>
+
+          <ProgressBar Grid.Row="2" Minimum="0" Maximum="100"
+                       Value="{Binding Progress}" Height="8" Margin="0,8,0,4"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Görüntü Ekle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding AddImagesCommand}"/>
+            <Button Content="PDF Oluştur" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding ConvertImagesToPdfCommand}"
+                    Background="#28A745"/>
+            <Button Content="Temizle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding ClearImagesCommand}"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- Tab 4: PDF → Görüntü -->
+      <TabItem Header="📷 PDF'ten Görüntü" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="PDF sayfalarını JPG veya PNG görüntülere dönüştürün"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button Content="PDF Seç" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding OpenPdfForExportCommand}"/>
+            <TextBlock Text="{Binding ExportPdfPath}" VerticalAlignment="Center"
+                       Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
+                       MaxWidth="500" ToolTip="{Binding ExportPdfPath}"/>
+          </StackPanel>
+
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Çıktı Formatı:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <ComboBox ItemsSource="{Binding ImageOutputFormats}"
+                      SelectedItem="{Binding SelectedImageFormat}"
+                      Width="100"/>
+          </StackPanel>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Çıkış Klasörü:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock Text="{Binding ExportOutputFolder}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" MaxWidth="400" Foreground="Gray"/>
+          </StackPanel>
+
+          <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}"
+                         Width="300" Height="8" Margin="0,0,12,0"
+                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+            <Button Content="Dönüştür" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding ExportPdfToImagesCommand}"
+                    Background="#17A2B8"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- Tab 5: Office → PDF -->
+      <TabItem Header="📊 Office'den PDF" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="Word (.docx), Excel, PowerPoint dosyalarını PDF'e dönüştürün"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
+                  Background="#FAFAFA" AllowDrop="True"
+                  Drop="OfficeTab_Drop" DragEnter="MergeTab_DragEnter">
+            <ListView ItemsSource="{Binding OfficeDocuments}"
+                      ItemTemplate="{StaticResource FileListItemTemplate}"
+                      BorderThickness="0" Background="Transparent" Margin="8"
+                      PreviewMouseLeftButtonDown="ListView_PreviewMouseLeftButtonDown"
+                      MouseMove="ListView_MouseMove"
+                      Drop="OfficeListView_Drop"
+                      Tag="Office"/>
+          </Border>
+
+          <ProgressBar Grid.Row="2" Minimum="0" Maximum="100"
+                       Value="{Binding Progress}" Height="8" Margin="0,8,0,4"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Dosya Ekle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding AddOfficeFilesCommand}"/>
+            <Button Content="PDF Oluştur" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding ConvertOfficeToPdfCommand}"
+                    Background="#28A745"/>
+            <Button Content="Temizle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding ClearOfficeCommand}"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- Tab 6: PDF Düzenleme -->
+      <TabItem Header="✏️ PDF Düzenle" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="PDF dosyasını düzenleyin: sayfa silme, döndürme, sıralama, çıkarma"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="3*"/>
+              <ColumnDefinition Width="250"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sol Taraf: PDF Sayfaları Listesi -->
+            <Border Grid.Column="0" BorderBrush="#CCC" BorderThickness="2"
+                    CornerRadius="8" Background="#FAFAFA" Margin="0,0,8,0">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8">
+                  <Button Content="PDF Aç" Style="{StaticResource PrimaryButton}"
+                          Command="{Binding OpenPdfForEditCommand}"/>
+                  <TextBlock Text="{Binding EditPdfPath}" VerticalAlignment="Center"
+                             Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
+                             MaxWidth="400" ToolTip="{Binding EditPdfPath}"/>
+                </StackPanel>
+
+                <!-- Sayfa Listesi - Tam Sayfa Önizleme -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Margin="8">
+                  <ListBox ItemsSource="{Binding PdfPages}"
+                           SelectedItem="{Binding SelectedPage}"
+                           BorderThickness="0" Background="Transparent"
+                           ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                      <Style TargetType="ListBoxItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Template">
+                          <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                              <Border x:Name="ItemBorder" BorderThickness="2" BorderBrush="Transparent" CornerRadius="4">
+                                <ContentPresenter/>
+                              </Border>
+                              <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                  <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#4A90D9"/>
+                                </Trigger>
+                              </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                          </Setter.Value>
+                        </Setter>
+                      </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <Border BorderBrush="#CCC" BorderThickness="1" CornerRadius="4"
+                                Margin="0,4" Background="White">
+                          <StackPanel>
+                            <!-- Sayfa Başlığı -->
+                            <Border Background="#F5F5F5" CornerRadius="4,4,0,0" Padding="12,8">
+                              <Grid>
+                                <Grid.ColumnDefinitions>
+                                  <ColumnDefinition Width="*"/>
+                                  <ColumnDefinition Width="Auto"/>
+                                  <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" FontWeight="Bold" FontSize="14" VerticalAlignment="Center">
+                                  <Run Text="Sayfa "/><Run Text="{Binding PageNumber}"/>
+                                  <Run Text=" — "/><Run Text="{Binding Info}"/>
+                                </TextBlock>
+                                <Button Grid.Column="1" Content="↻ 90° Döndür" FontSize="12"
+                                        Command="{Binding DataContext.RotatePageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Sayfayı 90° Döndür" Padding="10,4" Margin="4,0"
+                                        Background="#E0E0E0" BorderThickness="0" Cursor="Hand"/>
+                                <Button Grid.Column="2" Content="✕ Sil" FontSize="12" Foreground="Red"
+                                        Command="{Binding DataContext.DeletePageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Sayfayı Sil" Padding="10,4" Margin="4,0"
+                                        Background="#FFE0E0" BorderThickness="0" Cursor="Hand"/>
+                              </Grid>
+                            </Border>
+
+                            <!-- Tam Sayfa Önizleme -->
+                            <Border Background="#FAFAFA" MinHeight="500" Margin="12">
+                              <Image Source="{Binding Thumbnail}" Stretch="Uniform"
+                                     RenderOptions.BitmapScalingMode="HighQuality"/>
+                            </Border>
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </ScrollViewer>
+              </Grid>
+            </Border>
+
+            <!-- Sağ Taraf: Düzenleme Seçenekleri -->
+            <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="2"
+                    CornerRadius="8" Background="#FAFAFA" Padding="12">
+              <StackPanel>
+                <TextBlock Text="Düzenleme Seçenekleri" FontSize="16" FontWeight="Bold"
+                           Margin="0,0,0,16"/>
+
+                <Button Content="Seçili Sayfayı Yukarı Taşı" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding MovePageUpCommand}"
+                        HorizontalAlignment="Stretch" Margin="0,4"/>
+                <Button Content="Seçili Sayfayı Aşağı Taşı" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding MovePageDownCommand}"
+                        HorizontalAlignment="Stretch" Margin="0,4"/>
+                <Button Content="Seçili Sayfayı Çıkar" Style="{StaticResource SecondaryButton}"
+                        Command="{Binding ExtractPageCommand}"
+                        HorizontalAlignment="Stretch" Margin="0,4"/>
+
+                <Separator Margin="0,12"/>
+
+                <TextBlock Text="Toplu İşlemler" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                  <TextBlock Text="Döndürme:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <ComboBox ItemsSource="{Binding RotationAngles}"
+                            SelectedItem="{Binding SelectedRotation}"
+                            Width="80"/>
+                  <Button Content="Tümünü Döndür" Style="{StaticResource SecondaryButton}"
+                          Command="{Binding RotateAllPagesCommand}"
+                          Margin="8,0,0,0"/>
+                </StackPanel>
+
+                <Separator Margin="0,12"/>
+
+                <TextBlock Text="Filigran Ekle" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBox Text="{Binding WatermarkText, UpdateSourceTrigger=PropertyChanged}"
+                         Width="250" Height="30" Margin="0,4"
+                         ToolTip="Filigran metni"/>
+                <Button Content="Filigran Uygula" Style="{StaticResource PrimaryButton}"
+                        Command="{Binding AddWatermarkCommand}"
+                        Background="#6C757D" HorizontalAlignment="Left" Margin="0,4"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <ProgressBar Grid.Row="2" Minimum="0" Maximum="100"
+                       Value="{Binding Progress}" Height="8" Margin="0,8,0,4"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Değişiklikleri Kaydet" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding SaveEditedPdfCommand}"
+                    Background="#28A745"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</Window>
