@@ -1,37 +1,39 @@
 # DocMaster Pro
 
-WPF + .NET 8 tabanlı sürükle-bırak PDF birleştirme ve görüntü dönüştürme masaüstü uygulaması.
+WPF + .NET 8 tabanlı sürükle-bırak PDF birleştirme, bölme, düzenleme ve dosya dönüştürme masaüstü uygulaması.
 
 ## Özellikler
 
-- PDF birleştirme (çoklu dosya)
-- JPG / PNG görüntüleri PDF'e dönüştürme
-- PDF bölme (sayfa aralığı ile)
-- Sürükle-bırak arayüzü
-- Dosya seçme dialogu
-- Çıktı yolu seçimi
-- İlerleme çubuğu
-- Durum renk göstergesi
-- Geçici dosya otomatik temizliği
-- Inno Setup yükleyici
+- PDF birleştirme ve sayfa aralığına göre PDF bölme
+- JPG / PNG / BMP / GIF / TIFF / WEBP görüntülerini PDF'e dönüştürme
+- PDF sayfalarını görüntü olarak dışa aktarma
+- Word, Excel, PowerPoint ve metin dosyalarını PDF'e dönüştürme
+- Basit PDF düzenleme: sayfa silme, döndürme, sıralama, çıkarma ve filigran
+- Sürükle-bırak arayüzü, dosya seçme dialogları, ilerleme çubuğu ve durum göstergeleri
+- Geçici dosya temizliği ve Inno Setup yükleyici betiği
 
 ## Ön Koşullar
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - Windows 10 veya üzeri
-- (Yükleyici için) [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+- Office dosyalarını PDF'e çevirmek için Microsoft Office
+- PDF sayfalarını görüntüye çevirmek ve PDF önizleme üretmek için Ghostscript
+- Yükleyici oluşturmak için [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 
 ## Geliştirme
 
 ```bash
-cd DocMasterPro/desktop-app
-dotnet restore
-dotnet run
+cd DocMasterPro
+dotnet restore DocMasterPro.sln
+dotnet build DocMasterPro.sln
+dotnet test DocMasterPro.sln
+dotnet run --project desktop-app/DocConverter.csproj
 ```
 
 ## Release Derlemesi
 
 ```bash
+cd DocMasterPro/desktop-app
 dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true
 ```
 
@@ -40,7 +42,7 @@ dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile
 ## Yükleyici Oluşturma
 
 1. Inno Setup'ı kurun.
-2. `Assets/app.ico` dosyasını oluşturun.
+2. `Assets/app.ico` dosyasının bulunduğunu doğrulayın.
 3. Inno Setup IDE'de `installer/setup.iss` dosyasını açıp derleyin.
 4. Çıktı: `installer/Output/DocMasterProSetup.exe`
 
@@ -51,12 +53,15 @@ dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile
 | Platform | Windows 10/11 |
 | Framework | .NET 8 (WPF) |
 | Mimari | MVVM (CommunityToolkit.Mvvm) |
-| PDF İşleme | PDFsharp 1.51 |
-| Görüntü İşleme | Magick.NET-Q8-AnyCPU 13.7 |
+| PDF İşleme | PDFsharp 6.2.4 |
+| Görüntü İşleme | Magick.NET-Q8-AnyCPU 14.12.0 + ImageSharp 3.1.12 |
+| Office Dönüşümü | Microsoft Office Interop |
+| Test | xUnit + FluentAssertions |
 | Yükleyici | Inno Setup 6 |
 
 ## Bilinen Kısıtlamalar
 
-- PDFsharp 1.51 şifreli PDF dosyalarını açamaz; bu dosyalar "Error" durumuna düşer ve atlanır.
-- Magick.NET büyük görüntülerde (>50 MP) bellek yoğun çalışabilir.
-- Inno Setup `[Run]` bölümündeki .NET Runtime kontrolü basit kayıt defteri tabanlıdır.
+- Şifreli veya bozuk PDF dosyaları işlenemeyebilir; bu dosyalar hata olarak loglanır.
+- PDF'ten görüntü üretmek için Ghostscript gereklidir ve PATH üzerinden erişilebilir olmalıdır.
+- Office dönüşümleri yerel Microsoft Office kurulumuna ve COM otomasyonuna bağlıdır.
+- Büyük görüntüler ve çok sayfalı PDF dosyaları bellek kullanımını artırabilir.

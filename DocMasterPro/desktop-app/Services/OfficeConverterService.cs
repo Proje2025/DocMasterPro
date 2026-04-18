@@ -12,179 +12,202 @@ namespace DocConverter.Services
     /// <summary>
     /// Office formatlarını PDF'e dönüştüren servis.
     /// Microsoft Office kullanarak orijinal format ve yapıyı korur.
+    /// SemaphoreSlim ile concurrent Office instance limiti (max 3).
     /// </summary>
     public class OfficeConverterService
     {
+        private static readonly SemaphoreSlim _semaphore = new(3, 3);
+
         /// <summary>
         /// Word dosyasını (.docx/.doc) PDF'e dönüştürür - yapıyı korur.
         /// </summary>
-        public async System.Threading.Tasks.Task ConvertWordToPdfAsync(string inputPath, string outputPath)
+        public async Task ConvertWordToPdfAsync(
+            string inputPath,
+            string outputPath,
+            CancellationToken cancellationToken = default)
         {
-            await System.Threading.Tasks.Task.Run(() =>
+            await _semaphore.WaitAsync(cancellationToken);
+            try
             {
-                Word.Application? wordApp = null;
-                Word.Document? wordDoc = null;
-
-                try
+                await Task.Run(() =>
                 {
-                    // Word uygulamasını başlat
-                    wordApp = new Word.Application
-                    {
-                        Visible = false,
-                        DisplayAlerts = Word.WdAlertLevel.wdAlertsNone
-                    };
+                    Word.Application? wordApp = null;
+                    Word.Document? wordDoc = null;
 
-                    // Belgeyi aç
-                    wordDoc = wordApp.Documents.Open(
-                        FileName: inputPath,
-                        ReadOnly: true,
-                        AddToRecentFiles: false,
-                        Visible: false
-                    );
+                    try
+                    {
+                        wordApp = new Word.Application
+                        {
+                            Visible = false,
+                            DisplayAlerts = Word.WdAlertLevel.wdAlertsNone
+                        };
 
-                    // PDF olarak kaydet
-                    wordDoc.SaveAs2(
-                        FileName: outputPath,
-                        FileFormat: Word.WdSaveFormat.wdFormatPDF,
-                        AddToRecentFiles: false
-                    );
-                }
-                finally
-                {
-                    // COM objelerini temizle
-                    if (wordDoc != null)
-                    {
-                        wordDoc.Close(SaveChanges: false);
-                        Marshal.ReleaseComObject(wordDoc);
+                        wordDoc = wordApp.Documents.Open(
+                            FileName: inputPath,
+                            ReadOnly: true,
+                            AddToRecentFiles: false,
+                            Visible: false
+                        );
+
+                        wordDoc.SaveAs2(
+                            FileName: outputPath,
+                            FileFormat: Word.WdSaveFormat.wdFormatPDF,
+                            AddToRecentFiles: false
+                        );
                     }
-                    if (wordApp != null)
+                    finally
                     {
-                        wordApp.Quit();
-                        Marshal.ReleaseComObject(wordApp);
+                        if (wordDoc != null)
+                        {
+                            wordDoc.Close(SaveChanges: false);
+                            Marshal.ReleaseComObject(wordDoc);
+                        }
+                        if (wordApp != null)
+                        {
+                            wordApp.Quit();
+                            Marshal.ReleaseComObject(wordApp);
+                        }
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        Thread.Sleep(500);
                     }
-                    // Ek bekleme - dosya serbest bırakılana kadar
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    Thread.Sleep(1000); // 1 saniye bekle
-                }
-            });
+                }, cancellationToken);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
 
         /// <summary>
         /// Excel dosyasını (.xlsx/.xls) PDF'e dönüştürür.
         /// </summary>
-        public async System.Threading.Tasks.Task ConvertExcelToPdfAsync(string inputPath, string outputPath)
+        public async Task ConvertExcelToPdfAsync(
+            string inputPath,
+            string outputPath,
+            CancellationToken cancellationToken = default)
         {
-            await System.Threading.Tasks.Task.Run(() =>
+            await _semaphore.WaitAsync(cancellationToken);
+            try
             {
-                Excel.Application? excelApp = null;
-                Excel.Workbook? workbook = null;
-
-                try
+                await Task.Run(() =>
                 {
-                    // Excel uygulamasını başlat
-                    excelApp = new Excel.Application
-                    {
-                        Visible = false,
-                        DisplayAlerts = false
-                    };
+                    Excel.Application? excelApp = null;
+                    Excel.Workbook? workbook = null;
 
-                    // Çalışma kitabını aç
-                    workbook = excelApp.Workbooks.Open(
-                        Filename: inputPath,
-                        ReadOnly: true,
-                        AddToMru: false
-                    );
+                    try
+                    {
+                        excelApp = new Excel.Application
+                        {
+                            Visible = false,
+                            DisplayAlerts = false
+                        };
 
-                    // PDF olarak kaydet
-                    workbook.ExportAsFixedFormat(
-                        Type: Excel.XlFixedFormatType.xlTypePDF,
-                        Filename: outputPath,
-                        Quality: Excel.XlFixedFormatQuality.xlQualityStandard,
-                        IncludeDocProperties: true,
-                        IgnorePrintAreas: false
-                    );
-                }
-                finally
-                {
-                    // COM objelerini temizle
-                    if (workbook != null)
-                    {
-                        workbook.Close(SaveChanges: false);
-                        Marshal.ReleaseComObject(workbook);
+                        workbook = excelApp.Workbooks.Open(
+                            Filename: inputPath,
+                            ReadOnly: true,
+                            AddToMru: false
+                        );
+
+                        workbook.ExportAsFixedFormat(
+                            Type: Excel.XlFixedFormatType.xlTypePDF,
+                            Filename: outputPath,
+                            Quality: Excel.XlFixedFormatQuality.xlQualityStandard,
+                            IncludeDocProperties: true,
+                            IgnorePrintAreas: false
+                        );
                     }
-                    if (excelApp != null)
+                    finally
                     {
-                        excelApp.Quit();
-                        Marshal.ReleaseComObject(excelApp);
+                        if (workbook != null)
+                        {
+                            workbook.Close(SaveChanges: false);
+                            Marshal.ReleaseComObject(workbook);
+                        }
+                        if (excelApp != null)
+                        {
+                            excelApp.Quit();
+                            Marshal.ReleaseComObject(excelApp);
+                        }
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        Thread.Sleep(500);
                     }
-                    // Ek bekleme - dosya serbest bırakılana kadar
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    Thread.Sleep(1000); // 1 saniye bekle
-                }
-            });
+                }, cancellationToken);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
 
         /// <summary>
         /// PowerPoint dosyasını (.pptx/.ppt) PDF'e dönüştürür.
         /// </summary>
-        public async System.Threading.Tasks.Task ConvertPowerPointToPdfAsync(string inputPath, string outputPath)
+        public async Task ConvertPowerPointToPdfAsync(
+            string inputPath,
+            string outputPath,
+            CancellationToken cancellationToken = default)
         {
-            await System.Threading.Tasks.Task.Run(() =>
+            await _semaphore.WaitAsync(cancellationToken);
+            try
             {
-                PowerPoint.Application? pptApp = null;
-                PowerPoint.Presentation? presentation = null;
-
-                try
+                await Task.Run(() =>
                 {
-                    // PowerPoint uygulamasını başlat
-                    pptApp = new PowerPoint.Application
-                    {
-                        Visible = Microsoft.Office.Core.MsoTriState.msoFalse
-                    };
+                    PowerPoint.Application? pptApp = null;
+                    PowerPoint.Presentation? presentation = null;
 
-                    // Sunumu aç
-                    presentation = pptApp.Presentations.Open(
-                        FileName: inputPath,
-                        ReadOnly: Microsoft.Office.Core.MsoTriState.msoTrue,
-                        WithWindow: Microsoft.Office.Core.MsoTriState.msoFalse
-                    );
+                    try
+                    {
+                        pptApp = new PowerPoint.Application
+                        {
+                            Visible = Microsoft.Office.Core.MsoTriState.msoFalse
+                        };
 
-                    // PDF olarak kaydet
-                    presentation.SaveAs(
-                        FileName: outputPath,
-                        FileFormat: PowerPoint.PpSaveAsFileType.ppSaveAsPDF
-                    );
-                }
-                finally
-                {
-                    // COM objelerini temizle
-                    if (presentation != null)
-                    {
-                        presentation.Close();
-                        Marshal.ReleaseComObject(presentation);
+                        presentation = pptApp.Presentations.Open(
+                            FileName: inputPath,
+                            ReadOnly: Microsoft.Office.Core.MsoTriState.msoTrue,
+                            WithWindow: Microsoft.Office.Core.MsoTriState.msoFalse
+                        );
+
+                        presentation.SaveAs(
+                            FileName: outputPath,
+                            FileFormat: PowerPoint.PpSaveAsFileType.ppSaveAsPDF
+                        );
                     }
-                    if (pptApp != null)
+                    finally
                     {
-                        pptApp.Quit();
-                        Marshal.ReleaseComObject(pptApp);
+                        if (presentation != null)
+                        {
+                            presentation.Close();
+                            Marshal.ReleaseComObject(presentation);
+                        }
+                        if (pptApp != null)
+                        {
+                            pptApp.Quit();
+                            Marshal.ReleaseComObject(pptApp);
+                        }
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        Thread.Sleep(500);
                     }
-                    // Ek bekleme - dosya serbest bırakılana kadar
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    Thread.Sleep(1000); // 1 saniye bekle
-                }
-            });
+                }, cancellationToken);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
 
         /// <summary>
         /// Metin dosyasını (.txt/.rtf) PDF'e dönüştürür.
         /// </summary>
-        public async System.Threading.Tasks.Task ConvertTxtToPdfAsync(string inputPath, string outputPath)
+        public async Task ConvertTxtToPdfAsync(
+            string inputPath,
+            string outputPath,
+            CancellationToken cancellationToken = default)
         {
-            // TXT dosyalarını Word ile aç ve PDF'e çevir
-            await ConvertWordToPdfAsync(inputPath, outputPath);
+            await ConvertWordToPdfAsync(inputPath, outputPath, cancellationToken);
         }
 
         /// <summary>
@@ -203,7 +226,6 @@ namespace DocConverter.Services
         {
             try
             {
-                // Word COM nesnesi oluşturmayı dene
                 var wordApp = new Word.Application();
                 wordApp.Quit();
                 Marshal.ReleaseComObject(wordApp);
@@ -217,6 +239,16 @@ namespace DocConverter.Services
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Tüm Office COM objelerini temizler (emergency cleanup).
+        /// </summary>
+        public static void ForceGarbageCollection()
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
         }
     }
 }

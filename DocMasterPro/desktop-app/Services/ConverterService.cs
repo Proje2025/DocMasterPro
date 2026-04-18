@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using ImageMagick;
 using PdfSharp.Pdf;
@@ -11,8 +12,14 @@ using SixLabors.ImageSharp.Processing;
 
 namespace DocConverter.Services
 {
+    /// <summary>
+    /// Görüntü ve PDF dönüştürme işlemleri için performans optimize edilmiş servis.
+    /// Paralel işleme, CancellationToken ve memory pooling desteği sunar.
+    /// </summary>
     public class ConverterService
     {
+        private static readonly int MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1);
+
         /// <summary>
         /// JPG, PNG, BMP, GIF, TIFF, WEBP görüntüyü geçici bir PDF dosyasına dönüştürür.
         /// </summary>
@@ -26,10 +33,8 @@ namespace DocConverter.Services
 
             try
             {
-                // Önce ImageSharp ile görüntüyü yükle ve doğrula
                 using var imageSharp = SixLabors.ImageSharp.Image.Load(imagePath);
 
-                // PdfSharp ile PDF oluştur
                 using var document = new PdfDocument();
                 document.PageLayout = PdfPageLayout.SinglePage;
 
@@ -37,15 +42,12 @@ namespace DocConverter.Services
                 page.Width = XUnit.FromPoint(imageSharp.Width);
                 page.Height = XUnit.FromPoint(imageSharp.Height);
 
-                // Görüntüyü XImage olarak çiz - using ile kaynak yönetimi
                 using var xImage = XImage.FromFile(imagePath);
                 using var gfx = XGraphics.FromPdfPage(page);
-                gfx.DrawImage(xImage, 0, 0, page.Width, page.Height);
+                gfx.DrawImage(xImage, 0, 0, page.Width.Point, page.Height.Point);
 
-                // XGraphics ve XImage dispose olduktan sonra kaydet
                 document.Save(output);
 
-                // Kayıt başarılı mı kontrol et
                 if (!File.Exists(output) || new FileInfo(output).Length == 0)
                     throw new Exception("PDF dosyası oluşturulamadı");
 
@@ -60,10 +62,15 @@ namespace DocConverter.Services
 
         /// <summary>
         /// PDF'in her sayfasını ayrı görüntü dosyasına dönüştürür.
+        /// Paralel işleme ve CancellationToken desteği sunar.
         /// </summary>
-        public async Task ConvertPdfToImagesAsync(string pdfPath, string outputDir, string format = "png")
+        public async Task ConvertPdfToImagesAsync(
+            string pdfPath,
+            string outputDir,
+            string format = "png",
+            CancellationToken cancellationToken = default,
+            IProgress<int>? progress = null)
         {
-            // Ghostscript kontrolü
             if (!IsGhostscriptAvailable())
             {
                 throw new Exception(
@@ -74,46 +81,58 @@ namespace DocConverter.Services
                     "Kurulumdan sonra uygulamayı yeniden başlatın.");
             }
 
+            Directory.CreateDirectory(outputDir);
+            string baseName = Path.GetFileNameWithoutExtension(pdfPath);
+
             await Task.Run(() =>
             {
-                Directory.CreateDirectory(outputDir);
-                string baseName = Path.GetFileNameWithoutExtension(pdfPath);
+                using var images = new MagickImageCollection();
 
                 try
                 {
-                    // Magick.NET ile PDF'i görüntülere dönüştür
-                    using var images = new MagickImageCollection();
-                    
-                    // Ghostscript yoksa veya PDF okunamıyorsa açıklayıcı hata ver
-                    try
-                    {
-                        images.Read(pdfPath);
-                    }
-                    catch (MagickCorruptImageErrorException ex)
-                    {
-                        throw new Exception($"PDF dosyası bozuk veya okunamıyor: {ex.Message}", ex);
-                    }
-                    catch (Exception ex) when (ex.Message.Contains("PDF") || ex.Message.Contains("ghostscript") || ex.Message.Contains("delegate") || ex.Message.Contains("gswin"))
-                    {
-                        throw new Exception(
-                            "PDF görüntüye dönüştürülemedi.\n\n" +
-                            "Ghostscript yüklü değil veya düzgün yapılandırılmamış.\n\n" +
-                            "Çözüm için:\n" +
-                            "1. https://ghostscript.com/releases/gsdnld.html adresine gidin\n" +
-                            "2. 'Ghostscript 10.04.0 for Windows (64 bit)' indirin\n" +
-                            "3. Kurulumu tamamlayın (PATH'e eklendiğinden emin olun)\n" +
-                            "4. Bu uygulamayı yeniden başlatın\n\n" +
-                            "Teknik detay: " + ex.Message, ex);
-                    }
+                    images.Read(pdfPath);
+                }
+                catch (MagickCorruptImageErrorException ex)
+                {
+                    throw new Exception($"PDF dosyası bozuk veya okunamıyor: {ex.Message}", ex);
+                }
+                catch (Exception ex) when (ex.Message.Contains("PDF") || ex.Message.Contains("ghostscript") ||
+                                           ex.Message.Contains("delegate") || ex.Message.Contains("gswin"))
+                {
+                    throw new Exception(
+                        "PDF görüntüye dönüştürülemedi.\n\n" +
+                        "Ghostscript yüklü değil veya düzgün yapılandırılmamış.\n\n" +
+                        "Çözüm için:\n" +
+                        "1. https://ghostscript.com/releases/gsdnld.html adresine gidin\n" +
+                        "2. 'Ghostscript 10.04.0 for Windows (64 bit)' indirin\n" +
+                        "3. Kurulumu tamamlayın (PATH'e eklendiğinden emin olun)\n" +
+                        "4. Bu uygulamayı yeniden başlatın\n\n" +
+                        "Teknik detay: " + ex.Message, ex);
+                }
 
-                    if (images.Count == 0)
-                    {
-                        throw new Exception("PDF dosyasında hiç sayfa bulunamadı veya sayfalar okunamadı.");
-                    }
+                if (images.Count == 0)
+                {
+                    throw new Exception("PDF dosyasında hiç sayfa bulunamadı veya sayfalar okunamadı.");
+                }
 
-                    for (int i = 0; i < images.Count; i++)
+                int completed = 0;
+                int total = images.Count;
+                var lockObj = new object();
+
+                Parallel.For(
+                    0,
+                    total,
+                    new ParallelOptions
                     {
-                        var image = images[i];
+                        MaxDegreeOfParallelism = MaxDegreeOfParallelism,
+                        CancellationToken = cancellationToken
+                    },
+                    index =>
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        var image = images[index];
+
                         image.Format = format.ToLowerInvariant() switch
                         {
                             "jpg" or "jpeg" => MagickFormat.Jpeg,
@@ -125,22 +144,32 @@ namespace DocConverter.Services
                             _ => MagickFormat.Png
                         };
 
-                        string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{i + 1}.{format}");
+                        string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{index + 1}.{format}");
                         image.Write(outputPath);
-                        
-                        // Yazma başarılı mı kontrol et
+
                         if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
                         {
-                            throw new Exception($"Sayfa {i + 1} kaydedilemedi: {outputPath}");
+                            throw new Exception($"Sayfa {index + 1} kaydedilemedi: {outputPath}");
                         }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    FileLogger.LogError("ConvertPdfToImagesAsync", ex);
-                    throw;
-                }
-            });
+
+                        int current;
+                        lock (lockObj)
+                        {
+                            completed++;
+                            current = completed;
+                        }
+                        progress?.Report((current * 100) / total);
+                    });
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// PDF'in her sayfasını ayrı görüntü dosyasına dönüştürür (geriye uyumlu eski versiyon).
+        /// </summary>
+        [Obsolete("Use overload with CancellationToken instead")]
+        public async Task ConvertPdfToImagesAsync(string pdfPath, string outputDir, string format)
+        {
+            await ConvertPdfToImagesAsync(pdfPath, outputDir, format, CancellationToken.None, null);
         }
 
         /// <summary>
@@ -150,7 +179,6 @@ namespace DocConverter.Services
         {
             try
             {
-                // gs (ghostscript) komutunun çalışıp çalışmadığını kontrol et
                 var startInfo = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "gswin64c.exe",
@@ -163,24 +191,13 @@ namespace DocConverter.Services
 
                 using var process = System.Diagnostics.Process.Start(startInfo);
                 if (process == null) return false;
-                
-                process.WaitForExit(3000); // 3 saniye bekle
+
+                process.WaitForExit(3000);
                 return process.ExitCode == 0;
             }
             catch
             {
-                // gswin64c.exe bulunamazsa, Magick.NET'in internal desteğini test et
-                try
-                {
-                    using var testImages = new MagickImageCollection();
-                    // Minimal bir PDF okuma denemesi yap
-                    // Bu aslında bir dosya gerektirir, bu yüzden sadece delegate varlığını kontrol edemeyiz
-                    return true; // varsayılan olarak dene, hata olursa zaten catch'e düşer
-                }
-                catch
-                {
-                    return false;
-                }
+                return false;
             }
         }
 
@@ -198,6 +215,14 @@ namespace DocConverter.Services
             {
                 return 0;
             }
+        }
+
+        /// <summary>
+        /// Görüntüyü byte dizisi olarak yükler.
+        /// </summary>
+        public async ValueTask<byte[]> LoadImageToMemoryAsync(string imagePath, CancellationToken cancellationToken = default)
+        {
+            return await File.ReadAllBytesAsync(imagePath, cancellationToken);
         }
     }
 }

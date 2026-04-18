@@ -20,6 +20,7 @@ namespace DocConverter.Views
         public MainWindow()
         {
             InitializeComponent();
+            Title = "DocMaster Pro - PDF Studio";
         }
 
         // ==================== Ortak DragEnter ====================
@@ -192,6 +193,14 @@ namespace DocConverter.Views
 
             _isDragging = false;
             e.Handled = true;
+        }
+
+        private async void PdfPageItem_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is not ListBoxItem { DataContext: PdfPageInfo page }) return;
+            if (DataContext is not MainViewModel vm) return;
+
+            await vm.EnsurePagePreviewAsync(page);
         }
     }
 }

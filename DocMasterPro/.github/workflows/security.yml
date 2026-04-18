@@ -1,0 +1,84 @@
+name: Security
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday at midnight
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: windows-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: csharp
+
+    - name: Build
+      run: dotnet build DocMasterPro.sln -c Release
+      working-directory: DocMasterPro
+
+    - name: Perform Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:csharp"
+
+  dependency-scan:
+    name: Dependency Check
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore
+      run: dotnet restore DocMasterPro.sln
+      working-directory: DocMasterPro
+
+    - name: List dependencies
+      run: dotnet list DocMasterPro.sln package --include-transitive --format json | Out-File dependencies.json
+      working-directory: DocMasterPro
+
+    - name: Check for vulnerable packages
+      run: dotnet list DocMasterPro.sln package --vulnerable --include-transitive
+      working-directory: DocMasterPro
+
+    - name: Upload dependency list
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependencies
+        path: DocMasterPro/dependencies.json
+        retention-days: 30
+
+  secrets-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Gitleaks
+      uses: gitleaks/gitleaks-action@v2

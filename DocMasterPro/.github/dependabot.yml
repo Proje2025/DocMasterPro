@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/DocMasterPro/desktop-app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+  - package-ecosystem: "nuget"
+    directory: "/DocMasterPro/tests/DocConverter.Tests"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "deps"
+      include: "scope"

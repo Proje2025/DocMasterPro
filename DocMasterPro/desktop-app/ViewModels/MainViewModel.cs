@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DocConverter.Helpers;
@@ -24,6 +26,15 @@ namespace DocConverter.ViewModels
         private readonly PdfService _pdf = new();
         private readonly ConverterService _conv = new();
         private readonly OfficeConverterService _officeConv = new();
+        private readonly SemaphoreSlim _previewRenderGate = new(1, 1);
+        private CancellationTokenSource? _cts;
+        private CancellationTokenSource? _previewLoadCts;
+        private bool _ghostscriptWarningShown;
+
+        private const int PdfPreviewDensityDpi = 144;
+        private const int PdfPreviewMaxWidth = 1200;
+
+        public PdfStudioViewModel PdfStudio { get; } = new();
 
         // ==================== Ortak Özellikler ====================
         [ObservableProperty]
@@ -31,6 +42,12 @@ namespace DocConverter.ViewModels
 
         [ObservableProperty]
         private bool isBusy;
+
+        [ObservableProperty]
+        private int selectedWorkspaceIndex;
+
+        [ObservableProperty]
+        private string statusMessage = "Hazır";
 
         // ==================== Tab 1: PDF Birleştirme ====================
         [ObservableProperty]
@@ -87,12 +104,58 @@ namespace DocConverter.ViewModels
 
         public int[] RotationAngles { get; } = { 90, 180, 270 };
 
+        [RelayCommand]
+        public void SelectWorkspace(string? indexText)
+        {
+            if (int.TryParse(indexText, out int index))
+                SelectedWorkspaceIndex = index;
+        }
+
         // ==================== Constructor ====================
         public MainViewModel()
         {
             MergeDocuments.CollectionChanged += (_, _) => MergeCommand.NotifyCanExecuteChanged();
             ImageDocuments.CollectionChanged += (_, _) => ConvertImagesToPdfCommand.NotifyCanExecuteChanged();
             OfficeDocuments.CollectionChanged += (_, _) => ConvertOfficeToPdfCommand.NotifyCanExecuteChanged();
+            PdfPages.CollectionChanged += (_, _) => NotifyEditCommandStates();
+        }
+
+        partial void OnIsBusyChanged(bool value)
+        {
+            MergeCommand.NotifyCanExecuteChanged();
+            SplitCommand.NotifyCanExecuteChanged();
+            ConvertImagesToPdfCommand.NotifyCanExecuteChanged();
+            ExportPdfToImagesCommand.NotifyCanExecuteChanged();
+            ConvertOfficeToPdfCommand.NotifyCanExecuteChanged();
+            NotifyEditCommandStates();
+        }
+
+        partial void OnEditPdfPathChanged(string value)
+        {
+            NotifyEditCommandStates();
+        }
+
+        partial void OnSelectedPageChanged(PdfPageInfo? value)
+        {
+            NotifyEditCommandStates();
+        }
+
+        partial void OnWatermarkTextChanged(string value)
+        {
+            AddWatermarkCommand.NotifyCanExecuteChanged();
+        }
+
+        private void NotifyEditCommandStates()
+        {
+            OpenPdfForEditCommand.NotifyCanExecuteChanged();
+            DeletePageCommand.NotifyCanExecuteChanged();
+            RotatePageCommand.NotifyCanExecuteChanged();
+            MovePageUpCommand.NotifyCanExecuteChanged();
+            MovePageDownCommand.NotifyCanExecuteChanged();
+            ExtractPageCommand.NotifyCanExecuteChanged();
+            RotateAllPagesCommand.NotifyCanExecuteChanged();
+            AddWatermarkCommand.NotifyCanExecuteChanged();
+            SaveEditedPdfCommand.NotifyCanExecuteChanged();
         }
 
         // ==================== Ortak Metodlar ====================
@@ -117,6 +180,12 @@ namespace DocConverter.ViewModels
                 FileSizeFormatted = PathValidator.FormatFileSize(fileInfo.Length),
                 PageCount = pageCount
             };
+        }
+
+        private void CancelCurrentOperation()
+        {
+            _cts?.Cancel();
+            StatusMessage = "İptal ediliyor...";
         }
 
         // ==================== Tab 1: PDF Birleştirme Komutları ====================
@@ -156,8 +225,10 @@ namespace DocConverter.ViewModels
             };
             if (saveDlg.ShowDialog() != true) return;
 
+            _cts = new CancellationTokenSource();
             IsBusy = true;
             Progress = 0;
+            StatusMessage = "Dönüştürülüyor...";
 
             var pdfPaths = new List<string>();
             var tempFiles = new List<string>();
@@ -169,13 +240,16 @@ namespace DocConverter.ViewModels
 
                 foreach (var doc in MergeDocuments)
                 {
+                    _cts.Token.ThrowIfCancellationRequested();
+
                     doc.Status = "Converting";
                     current++;
                     Progress = (current * 50) / total;
+                    StatusMessage = $"Dönüştürülüyor: {doc.FileName}";
 
                     try
                     {
-                        string? pdfPath = await ConvertToPdfAsync(doc);
+                        string? pdfPath = await ConvertToPdfAsync(doc, _cts.Token);
                         if (pdfPath != null)
                         {
                             pdfPaths.Add(pdfPath);
@@ -188,6 +262,11 @@ namespace DocConverter.ViewModels
                             doc.Status = "Error";
                         }
                     }
+                    catch (OperationCanceledException)
+                    {
+                        doc.Status = "Ready";
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         doc.Status = "Error";
@@ -195,11 +274,44 @@ namespace DocConverter.ViewModels
                     }
                 }
 
-                var reporter = new Progress<int>(v => Progress = 50 + (v / 2));
-                await _pdf.MergePdfsAsync(pdfPaths, saveDlg.FileName, reporter);
+                StatusMessage = "PDF birleştiriliyor...";
+                if (pdfPaths.Count == 0)
+                {
+                    StatusMessage = "Hata";
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show("Birleştirilecek geçerli PDF oluşturulamadı.\nDetaylar için log dosyasını kontrol edin.",
+                            "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Error);
+                    });
+                    return;
+                }
 
-                MessageBox.Show("Birleştirme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                var reporter = new Progress<int>(v =>
+                {
+                    Progress = 50 + (v / 2);
+                });
+                await _pdf.MergePdfsAsync(pdfPaths, saveDlg.FileName, _cts.Token, reporter);
+
+                StatusMessage = "Tamamlandı";
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show("Birleştirme tamamlandı!", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "İptal edildi";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Hata";
+                FileLogger.LogError("Merge", ex);
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Birleştirme başarısız: {ex.Message}", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
             finally
             {
@@ -209,6 +321,8 @@ namespace DocConverter.ViewModels
                 }
                 IsBusy = false;
                 Progress = 100;
+                _cts?.Dispose();
+                _cts = null;
             }
         }
 
@@ -219,7 +333,6 @@ namespace DocConverter.ViewModels
         {
             if (item == null) return;
 
-            // Tüm koleksiyonlardan dene kaldır
             MergeDocuments.Remove(item);
             ImageDocuments.Remove(item);
             OfficeDocuments.Remove(item);
@@ -229,6 +342,12 @@ namespace DocConverter.ViewModels
         public void ClearMerge()
         {
             MergeDocuments.Clear();
+        }
+
+        [RelayCommand]
+        public void CancelOperation()
+        {
+            CancelCurrentOperation();
         }
 
         // ==================== Tab 2: PDF Bölme Komutları ====================
@@ -261,7 +380,6 @@ namespace DocConverter.ViewModels
                     SplitRanges.Add($"Sayfa {dash[0].Trim()} - {dash[1].Trim()}");
             }
 
-            // Buton durumunu güncelle
             SplitCommand.NotifyCanExecuteChanged();
         }
 
@@ -270,7 +388,15 @@ namespace DocConverter.ViewModels
         {
             if (string.IsNullOrWhiteSpace(SplitPdfPath)) return;
 
-            var ranges = PathValidator.ValidatePageRanges(PageRangeText, 9999);
+            int maxPage = _conv.GetPdfPageCount(SplitPdfPath);
+            if (maxPage <= 0)
+            {
+                MessageBox.Show("PDF dosyası açılamadı veya sayfa bulunamadı.",
+                    "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var ranges = PathValidator.ValidatePageRanges(PageRangeText, maxPage);
             if (ranges.Count == 0)
             {
                 MessageBox.Show("Geçerli bir sayfa aralığı girin.\nÖrnek: 1-3, 5-7",
@@ -285,25 +411,42 @@ namespace DocConverter.ViewModels
                 SplitOutputFolder = folderDlg.FolderName;
             }
 
+            _cts = new CancellationTokenSource();
             IsBusy = true;
             Progress = 0;
+            StatusMessage = "PDF böliniyor...";
 
             try
             {
-                await _pdf.SplitPdfAsync(SplitPdfPath, SplitOutputFolder, ranges);
-                Progress = 100;
-                MessageBox.Show("PDF bölme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                var reporter = new Progress<int>(v => Progress = v);
+                await _pdf.SplitPdfAsync(SplitPdfPath, SplitOutputFolder, ranges, _cts.Token, reporter);
+
+                StatusMessage = "Tamamlandı";
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show("PDF bölme tamamlandı!", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "İptal edildi";
             }
             catch (Exception ex)
             {
                 FileLogger.LogError("SplitPdf", ex);
-                MessageBox.Show($"Hata: {ex.Message}", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Hata: {ex.Message}", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
             finally
             {
                 IsBusy = false;
+                Progress = 100;
+                _cts?.Dispose();
+                _cts = null;
             }
         }
 
@@ -324,12 +467,11 @@ namespace DocConverter.ViewModels
             foreach (var f in dlg.FileNames)
             {
                 if (!PathValidator.IsPathSafe(f)) continue;
-                
-                // Sadece görüntü dosyalarını kabul et
+
                 string ext = Path.GetExtension(f).ToLowerInvariant();
                 if (!PathValidator.ImageExtensions.Contains(ext))
                     continue;
-                    
+
                 ImageDocuments.Add(CreateDocumentItem(f));
             }
         }
@@ -347,8 +489,10 @@ namespace DocConverter.ViewModels
             };
             if (saveDlg.ShowDialog() != true) return;
 
+            _cts = new CancellationTokenSource();
             IsBusy = true;
             Progress = 0;
+            StatusMessage = "Görüntüler dönüştürülüyor...";
 
             var tempFiles = new List<string>();
 
@@ -362,9 +506,12 @@ namespace DocConverter.ViewModels
 
                 foreach (var doc in ImageDocuments)
                 {
+                    _cts.Token.ThrowIfCancellationRequested();
+
                     doc.Status = "Converting";
                     current++;
                     Progress = (current * 100) / total;
+                    StatusMessage = $"İşleniyor: {doc.FileName}";
 
                     try
                     {
@@ -381,29 +528,51 @@ namespace DocConverter.ViewModels
                     }
                 }
 
-                // Hiç PDF oluşturulamadıysa hata ver
                 if (pdfPaths.Count == 0)
                 {
-                    MessageBox.Show("Hiçbir görüntü PDF'e dönüştürülemedi.\nDetaylar için log dosyasını kontrol edin.", 
-                        "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show("Hiçbir görüntü PDF'e dönüştürülemedi.\nDetaylar için log dosyasını kontrol edin.",
+                            "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                    });
                     return;
                 }
 
-                // Bazı dosyalar başarısız olduysa uyar
                 if (failedItems.Count > 0)
                 {
-                    var result = MessageBox.Show(
-                        $"Bazı dosyalar dönüştürülemedi: {string.Join(", ", failedItems)}\n\nDevam edilsin mi?", 
-                        "Uyarı", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    var result = await Application.Current.Dispatcher.InvokeAsync(() =>
+                        MessageBox.Show(
+                            $"Bazı dosyalar dönüştürülemedi: {string.Join(", ", failedItems)}\n\nDevam edilsin mi?",
+                            "Uyarı", MessageBoxButton.YesNo, MessageBoxImage.Warning));
+
                     if (result != MessageBoxResult.Yes)
                         return;
                 }
 
+                StatusMessage = "PDF birleştiriliyor...";
                 var reporter = new Progress<int>(v => Progress = v);
-                await _pdf.MergePdfsAsync(pdfPaths, saveDlg.FileName, reporter);
+                await _pdf.MergePdfsAsync(pdfPaths, saveDlg.FileName, _cts.Token, reporter);
 
-                MessageBox.Show("PDF oluşturuldu!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusMessage = "Tamamlandı";
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show("PDF oluşturuldu!", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "İptal edildi";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Hata";
+                FileLogger.LogError("ConvertImagesToPdf", ex);
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"PDF oluşturulamadı: {ex.Message}", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
             finally
             {
@@ -413,6 +582,8 @@ namespace DocConverter.ViewModels
                 }
                 IsBusy = false;
                 Progress = 100;
+                _cts?.Dispose();
+                _cts = null;
             }
         }
 
@@ -443,7 +614,6 @@ namespace DocConverter.ViewModels
                 if (folderDlg.ShowDialog() == true)
                     ExportOutputFolder = folderDlg.FolderName;
 
-                // Buton durumunu güncelle
                 ExportPdfToImagesCommand.NotifyCanExecuteChanged();
             }
         }
@@ -460,25 +630,47 @@ namespace DocConverter.ViewModels
                 ExportOutputFolder = folderDlg.FolderName;
             }
 
+            _cts = new CancellationTokenSource();
             IsBusy = true;
             Progress = 0;
+            StatusMessage = "PDF görüntülere dönüştürülüyor...";
 
             try
             {
-                await _conv.ConvertPdfToImagesAsync(ExportPdfPath, ExportOutputFolder, SelectedImageFormat.ToLower());
-                Progress = 100;
-                MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                var reporter = new Progress<int>(v => Progress = v);
+                await _conv.ConvertPdfToImagesAsync(
+                    ExportPdfPath,
+                    ExportOutputFolder,
+                    SelectedImageFormat.ToLowerInvariant(),
+                    _cts.Token,
+                    reporter);
+
+                StatusMessage = "Tamamlandı";
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "İptal edildi";
             }
             catch (Exception ex)
             {
                 FileLogger.LogError("ExportPdfToImages", ex);
-                MessageBox.Show($"Hata: {ex.Message}", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Hata: {ex.Message}", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
             finally
             {
                 IsBusy = false;
+                Progress = 100;
+                _cts?.Dispose();
+                _cts = null;
             }
         }
 
@@ -511,8 +703,10 @@ namespace DocConverter.ViewModels
             var folderDlg = new OpenFolderDialog { Title = "PDF'lerin kaydedileceği klasörü seçin" };
             if (folderDlg.ShowDialog() != true) return;
 
+            _cts = new CancellationTokenSource();
             IsBusy = true;
             Progress = 0;
+            StatusMessage = "Office dosyaları dönüştürülüyor...";
 
             try
             {
@@ -521,17 +715,25 @@ namespace DocConverter.ViewModels
 
                 foreach (var doc in OfficeDocuments)
                 {
+                    _cts.Token.ThrowIfCancellationRequested();
+
                     doc.Status = "Converting";
                     current++;
                     Progress = (current * 100) / total;
+                    StatusMessage = $"Dönüştürülüyor: {doc.FileName}";
 
                     try
                     {
                         string outputPath = Path.Combine(folderDlg.FolderName,
                             Path.GetFileNameWithoutExtension(doc.FileName) + ".pdf");
 
-                        await ConvertOfficeFileToPdfAsync(doc.FilePath, outputPath, doc.Extension);
+                        await ConvertOfficeFileToPdfAsync(doc.FilePath, outputPath, doc.Extension, _cts.Token);
                         doc.Status = "Done";
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        doc.Status = "Ready";
+                        throw;
                     }
                     catch (Exception ex)
                     {
@@ -540,13 +742,23 @@ namespace DocConverter.ViewModels
                     }
                 }
 
-                MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusMessage = "Tamamlandı";
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "İptal edildi";
             }
             finally
             {
                 IsBusy = false;
                 Progress = 100;
+                _cts?.Dispose();
+                _cts = null;
             }
         }
 
@@ -565,20 +777,24 @@ namespace DocConverter.ViewModels
         }
 
         // ==================== Tab 6: PDF Düzenleme Komutları ====================
-        [RelayCommand]
-        public void OpenPdfForEdit()
+        [RelayCommand(CanExecute = nameof(CanOpenPdfForEdit))]
+        public async Task OpenPdfForEdit()
         {
             var dlg = new OpenFileDialog { Filter = "PDF Dosyası|*.pdf" };
             if (dlg.ShowDialog() == true)
             {
                 EditPdfPath = dlg.FileName;
-                LoadPdfPages(dlg.FileName);
+                await LoadPdfPagesAsync(dlg.FileName);
             }
         }
 
-        private void LoadPdfPages(string pdfPath)
+        private bool CanOpenPdfForEdit() => !IsBusy;
+
+        private async Task LoadPdfPagesAsync(string pdfPath, int? selectedPageIndex = null)
         {
+            var previewToken = ResetPreviewLoad();
             PdfPages.Clear();
+            SelectedPage = null;
 
             if (string.IsNullOrWhiteSpace(pdfPath))
             {
@@ -596,133 +812,208 @@ namespace DocConverter.ViewModels
 
             try
             {
-                // Ghostscript kontrolü
-                if (!IsGhostscriptAvailable())
+                IsBusy = true;
+                StatusMessage = "PDF yükleniyor...";
+
+                bool ghostscriptAvailable = IsGhostscriptAvailable();
+                var pages = await Task.Run(() => LoadPdfPageMetadata(pdfPath, ghostscriptAvailable, previewToken), previewToken);
+
+                foreach (var page in pages)
+                    PdfPages.Add(page);
+
+                if (selectedPageIndex is >= 0 && selectedPageIndex < PdfPages.Count)
+                    SelectedPage = PdfPages[selectedPageIndex.Value];
+
+                if (!ghostscriptAvailable && !_ghostscriptWarningShown)
                 {
-                    // Ghostscript yoksa sadece metin bilgisi göster
-                    LoadPdfPagesBasic(pdfPath);
+                    _ghostscriptWarningShown = true;
                     MessageBox.Show(
                         "PDF sayfa önizlemeleri için Ghostscript önerilir.\n" +
                         "Sayfa bilgileri gösteriliyor.\n\n" +
                         "Önizleme için: https://ghostscript.com/releases/gsdnld.html",
                         "Bilgi", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
                 }
-
-                // Magick.NET ile thumbnail üret
-                LoadPdfPagesWithThumbnails(pdfPath);
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
                 FileLogger.LogError("LoadPdfPages", ex);
-                // Hata durumunda basic mod ile dene
                 try
                 {
-                    LoadPdfPagesBasic(pdfPath);
+                    var pages = LoadPdfPageMetadata(pdfPath, canLoadPreview: false, CancellationToken.None);
+                    foreach (var page in pages)
+                        PdfPages.Add(page);
                 }
                 catch { }
                 MessageBox.Show($"PDF açılırken hata oluştu: {ex.Message}\n\nSayfa bilgileri gösteriliyor.",
                     "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
+            }
         }
 
-        private void LoadPdfPagesBasic(string pdfPath)
+        private List<PdfPageInfo> LoadPdfPageMetadata(string pdfPath, bool canLoadPreview, CancellationToken cancellationToken)
         {
+            var pages = new List<PdfPageInfo>();
             using var doc = PdfReader.Open(pdfPath, PdfDocumentOpenMode.Import);
 
             if (doc.PageCount == 0)
             {
-                MessageBox.Show("PDF dosyasında sayfa bulunamadı.", "Uyarı",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                throw new InvalidOperationException("PDF dosyasında sayfa bulunamadı.");
             }
 
             for (int i = 0; i < doc.PageCount; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var page = doc.Pages[i];
-                PdfPages.Add(new PdfPageInfo
+                pages.Add(new PdfPageInfo
                 {
                     PageNumber = i + 1,
                     PageIndex = i,
                     Info = $"{page.Width:F0} x {page.Height:F0} pt",
                     Rotation = page.Rotate,
-                    Thumbnail = null
+                    Thumbnail = null,
+                    CanLoadPreview = canLoadPreview,
+                    PreviewStatus = canLoadPreview
+                        ? "Önizleme hazırlanıyor..."
+                        : "Önizleme için Ghostscript gerekli."
                 });
             }
+
+            return pages;
         }
 
-        private void LoadPdfPagesWithThumbnails(string pdfPath)
+        public async Task EnsurePagePreviewAsync(PdfPageInfo? page)
         {
-            using var doc = PdfReader.Open(pdfPath, PdfDocumentOpenMode.Import);
-
-            if (doc.PageCount == 0)
-            {
-                MessageBox.Show("PDF dosyasında sayfa bulunamadı.", "Uyarı",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (page == null || string.IsNullOrWhiteSpace(EditPdfPath))
                 return;
-            }
 
-            // Magick.NET ile PDF'i oku
-            using var images = new MagickImageCollection();
-            images.Read(pdfPath);
+            if (!page.CanLoadPreview || page.IsPreviewLoaded || page.IsPreviewLoading)
+                return;
 
-            for (int i = 0; i < doc.PageCount; i++)
+            var token = _previewLoadCts?.Token ?? CancellationToken.None;
+            if (token.IsCancellationRequested)
+                return;
+
+            bool gateAcquired = false;
+            page.IsPreviewLoading = true;
+            page.PreviewError = "";
+            page.PreviewStatus = "Önizleme yükleniyor...";
+
+            try
             {
-                var page = doc.Pages[i];
-                BitmapSource? thumbnail = null;
+                await _previewRenderGate.WaitAsync(token);
+                gateAcquired = true;
 
-                if (i < images.Count)
+                if (page.IsPreviewLoaded || token.IsCancellationRequested)
+                    return;
+
+                string pdfPath = EditPdfPath;
+                int pageIndex = page.PageIndex;
+                var thumbnail = await Task.Run(
+                    () => RenderPdfPagePreview(pdfPath, pageIndex, token),
+                    token);
+
+                token.ThrowIfCancellationRequested();
+
+                if (thumbnail == null)
                 {
-                    thumbnail = CreateThumbnail(images[i], 1200);
+                    page.PreviewError = "Önizleme oluşturulamadı.";
+                    page.PreviewStatus = page.PreviewError;
+                    return;
                 }
 
-                PdfPages.Add(new PdfPageInfo
-                {
-                    PageNumber = i + 1,
-                    PageIndex = i,
-                    Info = $"{page.Width:F0} x {page.Height:F0} pt",
-                    Rotation = page.Rotate,
-                    Thumbnail = thumbnail
-                });
+                page.Thumbnail = thumbnail;
+                page.IsPreviewLoaded = true;
+                page.PreviewStatus = "";
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                page.PreviewError = "Önizleme oluşturulamadı.";
+                page.PreviewStatus = page.PreviewError;
+                FileLogger.LogError("EnsurePagePreview", ex);
+            }
+            finally
+            {
+                if (gateAcquired)
+                    _previewRenderGate.Release();
+
+                page.IsPreviewLoading = false;
             }
         }
 
-        private BitmapSource? CreateThumbnail(IMagickImage image, int maxWidth)
+        private BitmapSource? RenderPdfPagePreview(string pdfPath, int pageIndex, CancellationToken cancellationToken)
         {
             try
             {
-                // Önce görüntüyü PNG formatında bir MemoryStream'e yaz
-                using var ms = new MemoryStream();
-                image.Write(ms, MagickFormat.Png);
-                ms.Position = 0;
+                cancellationToken.ThrowIfCancellationRequested();
 
-                // MemoryStream'den yeni bir MagickImage oluştur
-                using var thumb = new MagickImage(ms);
+                var settings = new MagickReadSettings
+                {
+                    Density = new Density(PdfPreviewDensityDpi),
+                    FrameIndex = (uint)pageIndex,
+                    FrameCount = 1
+                };
 
-                // Yüksek kaliteli boyutlandırma için Resize kullan (Sample yerine)
-                thumb.FilterType = FilterType.Lanczos;
-                thumb.Resize(maxWidth, 0); // 0 = otomatik yükseklik (aspect korur)
-                thumb.Format = MagickFormat.Png;
+                using var images = new MagickImageCollection();
+                images.Read(pdfPath, settings);
 
-                // PNG byte dizisine dönüştür
-                var bytes = thumb.ToByteArray();
+                if (images.Count == 0)
+                    return null;
 
-                // BitmapSource oluştur
+                var image = images[0];
+                image.FilterType = FilterType.Lanczos;
+                image.Quality = 90;
+
+                if (image.Width > PdfPreviewMaxWidth)
+                    image.Resize(PdfPreviewMaxWidth, 0);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var bytes = image.ToByteArray(MagickFormat.Png);
+
                 var bitmap = new BitmapImage();
-                using var outputMs = new MemoryStream(bytes);
+                using var ms = new MemoryStream(bytes);
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = outputMs;
+                bitmap.StreamSource = ms;
                 bitmap.EndInit();
                 bitmap.Freeze();
 
                 return bitmap;
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                FileLogger.LogError("CreateThumbnail", ex);
+                FileLogger.LogError("RenderPdfPagePreview", ex);
                 return null;
             }
+        }
+
+        private CancellationToken ResetPreviewLoad()
+        {
+            _previewLoadCts?.Cancel();
+            _previewLoadCts = new CancellationTokenSource();
+            return _previewLoadCts.Token;
+        }
+
+        private async Task WaitForPreviewRenderIdleAsync()
+        {
+            _previewLoadCts?.Cancel();
+
+            await _previewRenderGate.WaitAsync();
+            _previewRenderGate.Release();
         }
 
         private bool IsGhostscriptAvailable()
@@ -751,8 +1042,29 @@ namespace DocConverter.ViewModels
             }
         }
 
-        [RelayCommand]
-        public void DeletePage(PdfPageInfo? page)
+        private bool HasEditablePdf() =>
+            !IsBusy && !string.IsNullOrWhiteSpace(EditPdfPath) && PdfPages.Count > 0;
+
+        private bool CanEditSelectedPage() => HasEditablePdf() && SelectedPage != null;
+
+        private bool CanEditPage(PdfPageInfo? page) => HasEditablePdf() && page != null;
+
+        private bool CanMovePageUp() =>
+            CanEditSelectedPage() && SelectedPage != null && PdfPages.IndexOf(SelectedPage) > 0;
+
+        private bool CanMovePageDown()
+        {
+            if (!CanEditSelectedPage() || SelectedPage == null)
+                return false;
+
+            int index = PdfPages.IndexOf(SelectedPage);
+            return index >= 0 && index < PdfPages.Count - 1;
+        }
+
+        private bool CanAddWatermark() => HasEditablePdf() && !string.IsNullOrWhiteSpace(WatermarkText);
+
+        [RelayCommand(CanExecute = nameof(CanEditPage))]
+        public async Task DeletePage(PdfPageInfo? page)
         {
             if (page == null || string.IsNullOrWhiteSpace(EditPdfPath)) return;
 
@@ -763,13 +1075,26 @@ namespace DocConverter.ViewModels
 
             try
             {
-                using var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify);
-                if (page.PageIndex < doc.PageCount)
+                IsBusy = true;
+                StatusMessage = "Sayfa siliniyor...";
+                await WaitForPreviewRenderIdleAsync();
+
+                int nextSelectedIndex;
+                using (var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify))
                 {
+                    int selectedIndex = page.PageIndex;
+                    if (doc.PageCount <= 1)
+                        throw new InvalidOperationException("PDF dosyasında en az bir sayfa kalmalı.");
+
+                    if (page.PageIndex < 0 || page.PageIndex >= doc.PageCount)
+                        throw new ArgumentOutOfRangeException(nameof(page), "Sayfa indeksi geçersiz.");
+
                     doc.Pages.RemoveAt(page.PageIndex);
+                    doc.Save(EditPdfPath);
+                    nextSelectedIndex = Math.Min(selectedIndex, doc.PageCount - 1);
                 }
-                doc.Save(EditPdfPath);
-                LoadPdfPages(EditPdfPath);
+
+                await LoadPdfPagesAsync(EditPdfPath, nextSelectedIndex);
             }
             catch (Exception ex)
             {
@@ -777,23 +1102,35 @@ namespace DocConverter.ViewModels
                 MessageBox.Show($"Sayfa silinemedi: {ex.Message}", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
+            }
         }
 
-        [RelayCommand]
-        public void RotatePage(PdfPageInfo? page)
+        [RelayCommand(CanExecute = nameof(CanEditPage))]
+        public async Task RotatePage(PdfPageInfo? page)
         {
             if (page == null || string.IsNullOrWhiteSpace(EditPdfPath)) return;
 
             try
             {
-                using var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify);
-                if (page.PageIndex < doc.PageCount)
+                IsBusy = true;
+                StatusMessage = "Sayfa döndürülüyor...";
+                await WaitForPreviewRenderIdleAsync();
+
+                using (var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify))
                 {
+                    if (page.PageIndex < 0 || page.PageIndex >= doc.PageCount)
+                        throw new ArgumentOutOfRangeException(nameof(page), "Sayfa indeksi geçersiz.");
+
                     var pdfPage = doc.Pages[page.PageIndex];
                     pdfPage.Rotate = (pdfPage.Rotate + 90) % 360;
+                    doc.Save(EditPdfPath);
                 }
-                doc.Save(EditPdfPath);
-                LoadPdfPages(EditPdfPath);
+
+                await LoadPdfPagesAsync(EditPdfPath, page.PageIndex);
             }
             catch (Exception ex)
             {
@@ -801,10 +1138,15 @@ namespace DocConverter.ViewModels
                 MessageBox.Show($"Sayfa döndürülemedi: {ex.Message}", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
+            }
         }
 
-        [RelayCommand]
-        public void MovePageUp()
+        [RelayCommand(CanExecute = nameof(CanMovePageUp))]
+        public async Task MovePageUp()
         {
             if (SelectedPage == null || string.IsNullOrWhiteSpace(EditPdfPath))
             {
@@ -819,37 +1161,11 @@ namespace DocConverter.ViewModels
                 return;
             }
 
-            try
-            {
-                // PdfPages listesindeki öğeleri yeniden düzenle
-                var pagesList = PdfPages.ToList();
-                (pagesList[index - 1], pagesList[index]) = (pagesList[index], pagesList[index - 1]);
-
-                // Yeni PdfDocument oluştur ve sayfaları sırayla ekle
-                using var newDoc = new PdfDocument();
-                using var sourceDoc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Import);
-
-                foreach (var pageInfo in pagesList)
-                {
-                    newDoc.AddPage(sourceDoc.Pages[pageInfo.PageIndex]);
-                }
-
-                // Mevcut dosyayı değiştir
-                newDoc.Save(EditPdfPath);
-                LoadPdfPages(EditPdfPath);
-
-                // Seçimi koru (yeni pozisyonda)
-                SelectedPage = PdfPages[index - 1];
-            }
-            catch (Exception ex)
-            {
-                FileLogger.LogError("MovePageUp", ex);
-                MessageBox.Show($"Sayfa taşınamadı: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            await MoveSelectedPageAsync(index, index - 1);
         }
 
-        [RelayCommand]
-        public void MovePageDown()
+        [RelayCommand(CanExecute = nameof(CanMovePageDown))]
+        public async Task MovePageDown()
         {
             if (SelectedPage == null || string.IsNullOrWhiteSpace(EditPdfPath))
             {
@@ -864,37 +1180,37 @@ namespace DocConverter.ViewModels
                 return;
             }
 
+            await MoveSelectedPageAsync(index, index + 1);
+        }
+
+        private async Task MoveSelectedPageAsync(int fromIndex, int toIndex)
+        {
+            if (string.IsNullOrWhiteSpace(EditPdfPath))
+                return;
+
             try
             {
-                // PdfPages listesindeki öğeleri yeniden düzenle
-                var pagesList = PdfPages.ToList();
-                (pagesList[index + 1], pagesList[index]) = (pagesList[index], pagesList[index + 1]);
+                IsBusy = true;
+                StatusMessage = "Sayfa taşınıyor...";
+                await WaitForPreviewRenderIdleAsync();
 
-                // Yeni PdfDocument oluştur ve sayfaları sırayla ekle
-                using var newDoc = new PdfDocument();
-                using var sourceDoc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Import);
-
-                foreach (var pageInfo in pagesList)
-                {
-                    newDoc.AddPage(sourceDoc.Pages[pageInfo.PageIndex]);
-                }
-
-                // Mevcut dosyayı değiştir
-                newDoc.Save(EditPdfPath);
-                LoadPdfPages(EditPdfPath);
-
-                // Seçimi koru (yeni pozisyonda)
-                SelectedPage = PdfPages[index + 1];
+                await _pdf.MovePageAsync(EditPdfPath, fromIndex, toIndex);
+                await LoadPdfPagesAsync(EditPdfPath, toIndex);
             }
             catch (Exception ex)
             {
-                FileLogger.LogError("MovePageDown", ex);
+                FileLogger.LogError("MovePage", ex);
                 MessageBox.Show($"Sayfa taşınamadı: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
             }
         }
 
-        [RelayCommand]
-        public void ExtractPage()
+        [RelayCommand(CanExecute = nameof(CanEditSelectedPage))]
+        public async Task ExtractPage()
         {
             if (SelectedPage == null || string.IsNullOrWhiteSpace(EditPdfPath)) return;
 
@@ -908,7 +1224,14 @@ namespace DocConverter.ViewModels
 
             try
             {
+                IsBusy = true;
+                StatusMessage = "Sayfa çıkarılıyor...";
+                await WaitForPreviewRenderIdleAsync();
+
                 using var sourceDoc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Import);
+                if (SelectedPage.PageIndex < 0 || SelectedPage.PageIndex >= sourceDoc.PageCount)
+                    throw new ArgumentOutOfRangeException(nameof(SelectedPage), "Sayfa indeksi geçersiz.");
+
                 using var newDoc = new PdfDocument();
                 newDoc.AddPage(sourceDoc.Pages[SelectedPage.PageIndex]);
                 newDoc.Save(saveDlg.FileName);
@@ -922,22 +1245,34 @@ namespace DocConverter.ViewModels
                 MessageBox.Show($"Sayfa çıkarılamadı: {ex.Message}", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
+            }
         }
 
-        [RelayCommand]
-        public void RotateAllPages()
+        [RelayCommand(CanExecute = nameof(HasEditablePdf))]
+        public async Task RotateAllPages()
         {
             if (string.IsNullOrWhiteSpace(EditPdfPath)) return;
 
             try
             {
-                using var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify);
-                foreach (PdfPage page in doc.Pages)
+                IsBusy = true;
+                StatusMessage = "Tüm sayfalar döndürülüyor...";
+                await WaitForPreviewRenderIdleAsync();
+
+                int? selectedIndex = SelectedPage?.PageIndex;
+                using (var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify))
                 {
-                    page.Rotate = (page.Rotate + SelectedRotation) % 360;
+                    foreach (PdfPage page in doc.Pages)
+                    {
+                        page.Rotate = (page.Rotate + SelectedRotation) % 360;
+                    }
+                    doc.Save(EditPdfPath);
                 }
-                doc.Save(EditPdfPath);
-                LoadPdfPages(EditPdfPath);
+                await LoadPdfPagesAsync(EditPdfPath, selectedIndex);
 
                 MessageBox.Show("Tüm sayfalar döndürüldü!", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -948,29 +1283,40 @@ namespace DocConverter.ViewModels
                 MessageBox.Show($"Döndürme başarısız: {ex.Message}", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
+            }
         }
 
-        [RelayCommand]
-        public void AddWatermark()
+        [RelayCommand(CanExecute = nameof(CanAddWatermark))]
+        public async Task AddWatermark()
         {
             if (string.IsNullOrWhiteSpace(EditPdfPath) || string.IsNullOrWhiteSpace(WatermarkText)) return;
 
             try
             {
-                using var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify);
-                foreach (PdfPage page in doc.Pages)
-                {
-                    var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
-                    var font = new XFont("Arial", 48);
-                    var brush = new XSolidBrush(XColor.FromArgb(80, 128, 128, 128));
+                IsBusy = true;
+                StatusMessage = "Filigran uygulanıyor...";
+                await WaitForPreviewRenderIdleAsync();
 
-                    // Ortaya çapraz filigran
-                    gfx.TranslateTransform(page.Width / 2, page.Height / 2);
-                    gfx.RotateTransform(-45);
-                    gfx.DrawString(WatermarkText, font, brush, 0, 0, XStringFormats.Center);
+                int? selectedIndex = SelectedPage?.PageIndex;
+                using (var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify))
+                {
+                    foreach (PdfPage page in doc.Pages)
+                    {
+                        var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
+                        var font = new XFont("Arial", 48);
+                        var brush = new XSolidBrush(XColor.FromArgb(80, 128, 128, 128));
+
+                        gfx.TranslateTransform(page.Width.Point / 2, page.Height.Point / 2);
+                        gfx.RotateTransform(-45);
+                        gfx.DrawString(WatermarkText, font, brush, 0, 0, XStringFormats.Center);
+                    }
+                    doc.Save(EditPdfPath);
                 }
-                doc.Save(EditPdfPath);
-                LoadPdfPages(EditPdfPath);
+                await LoadPdfPagesAsync(EditPdfPath, selectedIndex);
 
                 MessageBox.Show("Filigran eklendi!", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -981,10 +1327,15 @@ namespace DocConverter.ViewModels
                 MessageBox.Show($"Filigran eklenemedi: {ex.Message}", "DocMaster Pro",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                IsBusy = false;
+                StatusMessage = "Hazır";
+            }
         }
 
-        [RelayCommand]
-        public void SaveEditedPdf()
+        [RelayCommand(CanExecute = nameof(HasEditablePdf))]
+        public async Task SaveEditedPdf()
         {
             if (string.IsNullOrWhiteSpace(EditPdfPath)) return;
 
@@ -999,6 +1350,10 @@ namespace DocConverter.ViewModels
             {
                 try
                 {
+                    IsBusy = true;
+                    StatusMessage = "PDF kaydediliyor...";
+                    await WaitForPreviewRenderIdleAsync();
+
                     File.Copy(EditPdfPath, saveDlg.FileName, true);
                     MessageBox.Show("PDF kaydedildi!", "DocMaster Pro",
                         MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1009,11 +1364,16 @@ namespace DocConverter.ViewModels
                     MessageBox.Show($"Kayıt başarısız: {ex.Message}", "DocMaster Pro",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
+                finally
+                {
+                    IsBusy = false;
+                    StatusMessage = "Hazır";
+                }
             }
         }
 
         // ==================== Yardımcı Metodlar ====================
-        private async Task<string?> ConvertToPdfAsync(DocumentItem doc)
+        private async Task<string?> ConvertToPdfAsync(DocumentItem doc, CancellationToken cancellationToken = default)
         {
             string tempDir = Path.Combine(Path.GetTempPath(), "DocMasterPro");
             Directory.CreateDirectory(tempDir);
@@ -1028,38 +1388,38 @@ namespace DocConverter.ViewModels
 
             if (doc.Extension is ".docx" or ".doc")
             {
-                await _officeConv.ConvertWordToPdfAsync(doc.FilePath, outputPath);
+                await _officeConv.ConvertWordToPdfAsync(doc.FilePath, outputPath, cancellationToken);
                 return outputPath;
             }
             else if (doc.Extension is ".xlsx" or ".xls")
             {
-                await _officeConv.ConvertExcelToPdfAsync(doc.FilePath, outputPath);
+                await _officeConv.ConvertExcelToPdfAsync(doc.FilePath, outputPath, cancellationToken);
                 return outputPath;
             }
             else if (doc.Extension is ".pptx" or ".ppt")
             {
-                await _officeConv.ConvertPowerPointToPdfAsync(doc.FilePath, outputPath);
+                await _officeConv.ConvertPowerPointToPdfAsync(doc.FilePath, outputPath, cancellationToken);
                 return outputPath;
             }
             else if (doc.Extension is ".txt" or ".rtf" or ".html" or ".htm")
             {
-                await _officeConv.ConvertTxtToPdfAsync(doc.FilePath, outputPath);
+                await _officeConv.ConvertTxtToPdfAsync(doc.FilePath, outputPath, cancellationToken);
                 return outputPath;
             }
 
             return null;
         }
 
-        private async Task ConvertOfficeFileToPdfAsync(string inputPath, string outputPath, string extension)
+        private async Task ConvertOfficeFileToPdfAsync(string inputPath, string outputPath, string extension, CancellationToken cancellationToken = default)
         {
             if (extension is ".docx" or ".doc")
-                await _officeConv.ConvertWordToPdfAsync(inputPath, outputPath);
+                await _officeConv.ConvertWordToPdfAsync(inputPath, outputPath, cancellationToken);
             else if (extension is ".xlsx" or ".xls")
-                await _officeConv.ConvertExcelToPdfAsync(inputPath, outputPath);
+                await _officeConv.ConvertExcelToPdfAsync(inputPath, outputPath, cancellationToken);
             else if (extension is ".pptx" or ".ppt")
-                await _officeConv.ConvertPowerPointToPdfAsync(inputPath, outputPath);
+                await _officeConv.ConvertPowerPointToPdfAsync(inputPath, outputPath, cancellationToken);
             else if (extension is ".txt" or ".rtf")
-                await _officeConv.ConvertTxtToPdfAsync(inputPath, outputPath);
+                await _officeConv.ConvertTxtToPdfAsync(inputPath, outputPath, cancellationToken);
         }
     }
 
@@ -1080,5 +1440,20 @@ namespace DocConverter.ViewModels
 
         [ObservableProperty]
         private BitmapSource? thumbnail;
+
+        [ObservableProperty]
+        private bool canLoadPreview;
+
+        [ObservableProperty]
+        private bool isPreviewLoading;
+
+        [ObservableProperty]
+        private bool isPreviewLoaded;
+
+        [ObservableProperty]
+        private string previewError = "";
+
+        [ObservableProperty]
+        private string previewStatus = "";
     }
 }

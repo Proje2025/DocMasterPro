@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 
@@ -105,9 +106,9 @@ namespace DocConverter.Helpers
 
             return bytes switch
             {
-                >= GB => $"{bytes / (double)GB:F2} GB",
-                >= MB => $"{bytes / (double)MB:F2} MB",
-                >= KB => $"{bytes / (double)KB:F2} KB",
+                >= GB => $"{(bytes / (double)GB).ToString("F2", CultureInfo.InvariantCulture)} GB",
+                >= MB => $"{(bytes / (double)MB).ToString("F2", CultureInfo.InvariantCulture)} MB",
+                >= KB => $"{(bytes / (double)KB).ToString("F2", CultureInfo.InvariantCulture)} KB",
                 _ => $"{bytes} B"
             };
         }

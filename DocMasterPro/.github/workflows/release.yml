@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  CONFIGURATION: Release
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore
+      run: dotnet restore DocMasterPro.sln
+      working-directory: DocMasterPro
+
+    - name: Build Release
+      run: dotnet build DocMasterPro.sln --configuration ${{ env.CONFIGURATION }} --no-restore
+      working-directory: DocMasterPro
+
+    - name: Publish Self-Contained
+      run: dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish-single
+      working-directory: DocMasterPro/desktop-app
+
+    - name: Publish Framework-Dependent
+      run: dotnet publish -c Release -r win-x64 --self-contained false -o ./publish-fd
+      working-directory: DocMasterPro/desktop-app
+
+    - name: Run Tests
+      run: dotnet test DocMasterPro.sln --configuration Release --no-build --verbosity minimal
+      working-directory: DocMasterPro
+
+    - name: Create ZIP - Self-Contained
+      shell: pwsh
+      run: |
+        Compress-Archive -Path DocMasterPro/desktop-app/publish-single/* -DestinationPath DocMasterPro-${{ github.ref_name }}-win-x64.zip
+
+    - name: Create ZIP - Framework-Dependent
+      shell: pwsh
+      run: |
+        Compress-Archive -Path DocMasterPro/desktop-app/publish-fd/* -DestinationPath DocMasterPro-${{ github.ref_name }}-win-x64-framework.zip
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          DocMasterPro/desktop-app/publish-single/DocConverter.exe
+          DocMasterPro-${{ github.ref_name }}-win-x64.zip
+          DocMasterPro-${{ github.ref_name }}-win-x64-framework.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

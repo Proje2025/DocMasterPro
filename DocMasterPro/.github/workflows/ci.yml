@@ -1,0 +1,49 @@
+name: CI Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  CONFIGURATION: Release
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore
+      run: dotnet restore DocMasterPro.sln
+      working-directory: DocMasterPro
+
+    - name: Build
+      run: dotnet build DocMasterPro.sln --configuration ${{ env.CONFIGURATION }} --no-restore
+      working-directory: DocMasterPro
+
+    - name: Run unit tests
+      run: dotnet test DocMasterPro.sln --configuration ${{ env.CONFIGURATION }} --no-build --verbosity normal
+      working-directory: DocMasterPro
+
+    - name: Publish desktop app
+      run: |
+        dotnet publish -c Release -r win-x64 --self-contained false -o ./publish
+      working-directory: DocMasterPro/desktop-app
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DocMasterPro-build
+        path: DocMasterPro/desktop-app/publish/
+        retention-days: 7
