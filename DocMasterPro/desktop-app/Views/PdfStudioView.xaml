@@ -45,7 +45,11 @@
 
   </UserControl.Resources>
 
-  <Grid Background="#F3F6FA">
+  <Grid Background="#F3F6FA"
+        AllowDrop="True"
+        DragEnter="PdfStudio_DragEnter"
+        DragOver="PdfStudio_DragOver"
+        Drop="PdfStudio_Drop">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
@@ -73,9 +77,7 @@
         <Separator Grid.Column="1" Margin="12,0" Width="1" Background="#DFE5EE"/>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button Content="‹" Style="{StaticResource StudioButton}" MinWidth="34" Command="{Binding PreviousPageCommand}"/>
           <TextBlock Text="{Binding PageLabel}" VerticalAlignment="Center" Margin="8,0" FontWeight="SemiBold"/>
-          <Button Content="›" Style="{StaticResource StudioButton}" MinWidth="34" Command="{Binding NextPageCommand}"/>
           <Button Content="-" Style="{StaticResource StudioButton}" MinWidth="34" Command="{Binding ZoomOutCommand}"/>
           <TextBlock Text="{Binding ZoomPercent, StringFormat={}{0:0}%}" VerticalAlignment="Center" Margin="8,0"/>
           <Button Content="+" Style="{StaticResource StudioButton}" MinWidth="34" Command="{Binding ZoomInCommand}"/>
@@ -128,7 +130,10 @@
         </Border>
 
         <Border Grid.Row="1" Background="#DCE3ED" CornerRadius="8" ClipToBounds="True">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <ScrollViewer x:Name="DocumentScrollViewer"
+                        HorizontalScrollBarVisibility="Auto"
+                        VerticalScrollBarVisibility="Auto"
+                        PreviewMouseWheel="DocumentScrollViewer_PreviewMouseWheel">
             <Grid Margin="28" HorizontalAlignment="Center" VerticalAlignment="Top">
               <Border Background="White" BorderBrush="#C8D2DF" BorderThickness="1" Padding="0">
                 <Grid Width="{Binding PageViewWidth}" Height="{Binding PageViewHeight}">

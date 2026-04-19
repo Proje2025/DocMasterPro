@@ -67,6 +67,40 @@ public class PathValidatorTests
         result.Should().Be(expected);
     }
 
+    [Fact]
+    public void TryResolveExistingPdfPath_ReturnsFullPathForExistingPdf()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"DocMasterProPathTests_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        string pdfPath = Path.Combine(tempDir, "sample.PDF");
+
+        try
+        {
+            File.WriteAllText(pdfPath, "placeholder");
+
+            var result = PathValidator.TryResolveExistingPdfPath(pdfPath, out string fullPath);
+
+            result.Should().BeTrue();
+            fullPath.Should().Be(Path.GetFullPath(pdfPath));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("missing.pdf")]
+    [InlineData("sample.txt")]
+    public void TryResolveExistingPdfPath_RejectsInvalidPdfPath(string path)
+    {
+        var result = PathValidator.TryResolveExistingPdfPath(path, out string fullPath);
+
+        result.Should().BeFalse();
+        fullPath.Should().BeEmpty();
+    }
+
     public static TheoryData<string, int, List<(int From, int To)>> ValidPageRanges => new()
     {
         { "1", 10, new List<(int From, int To)> { (1, 1) } },

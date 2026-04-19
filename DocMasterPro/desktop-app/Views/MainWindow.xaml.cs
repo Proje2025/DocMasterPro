@@ -23,6 +23,28 @@ namespace DocConverter.Views
             Title = "DocMaster Pro - PDF Studio";
         }
 
+        public async Task OpenPdfInStudioAsync(string path, string? successStatusMessage = null)
+        {
+            MainTabs.SelectedIndex = 0;
+
+            if (DataContext is not MainViewModel vm)
+                return;
+
+            if (!PathValidator.TryResolveExistingPdfPath(path, out string pdfPath))
+            {
+                MessageBox.Show(
+                    $"PDF Studio yalnızca mevcut PDF dosyalarını açabilir:\n{path}",
+                    "DocMaster Pro",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            bool opened = await vm.PdfStudio.OpenPdfPathAsync(pdfPath, promptForUnsavedChanges: true);
+            if (opened && !string.IsNullOrWhiteSpace(successStatusMessage))
+                vm.PdfStudio.StatusMessage = successStatusMessage;
+        }
+
         // ==================== Ortak DragEnter ====================
         private void MergeTab_DragEnter(object sender, DragEventArgs e)
         {

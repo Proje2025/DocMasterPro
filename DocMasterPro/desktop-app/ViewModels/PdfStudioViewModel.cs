@@ -167,20 +167,25 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         if (dialog.ShowDialog() != true)
             return;
 
-        await OpenPdfPathAsync(dialog.FileName);
+        await OpenPdfPathAsync(dialog.FileName, promptForUnsavedChanges: true);
     }
 
-    public async Task OpenPdfPathAsync(string path)
+    public async Task<bool> OpenPdfPathAsync(string path, bool promptForUnsavedChanges = false)
     {
+        if (promptForUnsavedChanges && !ConfirmReplaceOpenSession())
+            return false;
+
         IsBusy = true;
         StatusMessage = "PDF güvenli çalışma oturumu olarak açılıyor...";
 
         try
         {
-            _renderCts?.Cancel();
-            _sessionService.CleanupSession(Session);
+            string sourcePath = Path.GetFullPath(path);
+            var previousSession = Session;
+            var newSession = await _sessionService.OpenPdfSessionAsync(sourcePath);
 
-            Session = await _sessionService.OpenPdfSessionAsync(path);
+            _renderCts?.Cancel();
+            Session = newSession;
             CurrentPageIndex = 0;
             Annotations.Clear();
             VisibleAnnotations.Clear();
@@ -188,14 +193,17 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
             VisibleSearchResults.Clear();
             SelectedAnnotation = null;
             SelectedSearchResult = null;
+            _sessionService.CleanupSession(previousSession);
 
             await RenderCurrentPageAsync();
             StatusMessage = "PDF açıldı. Kaynak dosya çalışma kopyası üzerinden korunuyor.";
+            return true;
         }
         catch (Exception ex)
         {
             StatusMessage = "PDF açılamadı";
             MessageBox.Show(ex.Message, "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
         }
         finally
         {
@@ -430,6 +438,24 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         SelectedAnnotation = annotation;
     }
 
+    public bool TryGoToNextPageFromScroll()
+    {
+        if (!CanGoNext())
+            return false;
+
+        CurrentPageIndex++;
+        return true;
+    }
+
+    public bool TryGoToPreviousPageFromScroll()
+    {
+        if (!CanGoPrevious())
+            return false;
+
+        CurrentPageIndex--;
+        return true;
+    }
+
     private async Task SaveToAsync(string outputPath)
     {
         if (Session == null)
@@ -590,6 +616,20 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         Session.IsDirty = true;
         OnPropertyChanged(nameof(DirtyLabel));
         NotifyCommandStates();
+    }
+
+    private bool ConfirmReplaceOpenSession()
+    {
+        if (Session?.IsDirty != true)
+            return true;
+
+        var result = MessageBox.Show(
+            "Açık PDF'de kaydedilmemiş değişiklikler var. Yeni PDF açılırsa bu değişiklikler atılacak. Devam edilsin mi?",
+            "DocMaster Pro",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        return result == MessageBoxResult.Yes;
     }
 
     private double CurrentScale => Math.Max(0.25, ZoomPercent / 100d) * ScreenDpi / PdfPointDpi;

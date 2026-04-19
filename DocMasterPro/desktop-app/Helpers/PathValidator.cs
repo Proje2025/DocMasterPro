@@ -63,6 +63,35 @@ namespace DocConverter.Helpers
             return SupportedExtensions.Contains(extension.ToLowerInvariant());
         }
 
+        public static bool TryResolveExistingPdfPath(string path, out string fullPath)
+        {
+            fullPath = "";
+
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            try
+            {
+                string candidate = path.Trim().Trim('"');
+                fullPath = Path.GetFullPath(candidate);
+
+                bool isExistingPdf = Path.IsPathFullyQualified(fullPath)
+                    && File.Exists(fullPath)
+                    && string.Equals(Path.GetExtension(fullPath), ".pdf", StringComparison.OrdinalIgnoreCase);
+
+                if (isExistingPdf)
+                    return true;
+
+                fullPath = "";
+                return false;
+            }
+            catch
+            {
+                fullPath = "";
+                return false;
+            }
+        }
+
         /// <summary>
         /// "1-3, 5-7" formatındaki sayfa aralığını parse eder.
         /// </summary>
