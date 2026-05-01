@@ -45,6 +45,23 @@ jobs:
       run: dotnet test DocMasterPro.sln --configuration Release --no-build --verbosity minimal
       working-directory: DocMasterPro
 
+    - name: Resolve Version
+      shell: pwsh
+      run: |
+        $version = '${{ github.ref_name }}'.TrimStart('v')
+        "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Install Velopack CLI
+      run: dotnet tool install -g vpk --version 0.0.1298
+
+    - name: Publish Velopack Payload
+      run: dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=${{ env.APP_VERSION }} -o ./publish-velopack
+      working-directory: DocMasterPro/desktop-app
+
+    - name: Create Velopack Release
+      run: vpk pack --packId DocMasterPro --packVersion ${{ env.APP_VERSION }} --packDir ./publish-velopack --mainExe DocConverter.exe --outputDir ../../Releases --channel win
+      working-directory: DocMasterPro/desktop-app
+
     - name: Create ZIP - Self-Contained
       shell: pwsh
       run: |
@@ -59,6 +76,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
+          Releases/*
           DocMasterPro/desktop-app/publish-single/DocConverter.exe
           DocMasterPro-${{ github.ref_name }}-win-x64.zip
           DocMasterPro-${{ github.ref_name }}-win-x64-framework.zip

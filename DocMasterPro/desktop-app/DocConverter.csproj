@@ -9,6 +9,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <StartupObject>DocConverter.App</StartupObject>
+    <Version>1.0.0</Version>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <AnalysisMode>Recommended</AnalysisMode>
     <NoWarn>$(NoWarn);NU1701</NoWarn>
@@ -28,6 +30,12 @@
     <PackageReference Include="Microsoft.Office.Interop.PowerPoint" Version="15.0.4420.1018" />
     <PackageReference Include="MicrosoftOfficeCore" Version="15.0.0" />
     <PackageReference Include="Polly" Version="8.6.6" />
+    <PackageReference Include="Velopack" Version="0.0.1298" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
   </ItemGroup>
 
 </Project>

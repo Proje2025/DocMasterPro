@@ -211,6 +211,76 @@ namespace DocConverter.Services
         }
 
         /// <summary>
+        /// PDF dosyasını Microsoft Word motoruyla düzenlenebilir DOCX dosyasına dönüştürür.
+        /// </summary>
+        public async Task ConvertPdfToWordAsync(
+            string inputPath,
+            string outputPath,
+            CancellationToken cancellationToken = default)
+        {
+            if (!File.Exists(inputPath))
+                throw new FileNotFoundException("PDF dosyası bulunamadı.", inputPath);
+
+            await _semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                await Task.Run(() =>
+                {
+                    Word.Application? wordApp = null;
+                    Word.Document? wordDoc = null;
+
+                    try
+                    {
+                        wordApp = new Word.Application
+                        {
+                            Visible = false,
+                            DisplayAlerts = Word.WdAlertLevel.wdAlertsNone
+                        };
+
+                        wordDoc = wordApp.Documents.Open(
+                            FileName: inputPath,
+                            ReadOnly: true,
+                            AddToRecentFiles: false,
+                            Visible: false
+                        );
+
+                        wordDoc.SaveAs2(
+                            FileName: outputPath,
+                            FileFormat: Word.WdSaveFormat.wdFormatXMLDocument,
+                            AddToRecentFiles: false
+                        );
+                    }
+                    finally
+                    {
+                        if (wordDoc != null)
+                        {
+                            wordDoc.Close(SaveChanges: false);
+                            Marshal.ReleaseComObject(wordDoc);
+                        }
+                        if (wordApp != null)
+                        {
+                            wordApp.Quit();
+                            Marshal.ReleaseComObject(wordApp);
+                        }
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        Thread.Sleep(500);
+                    }
+                }, cancellationToken);
+            }
+            catch (COMException ex)
+            {
+                throw new InvalidOperationException(
+                    "PDF Word dosyasına dönüştürülemedi. Bu özellik için Microsoft Word 2013 veya daha yeni bir sürüm kurulu olmalıdır.",
+                    ex);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+
+        /// <summary>
         /// Eski .doc formatı için uyarı mesajı döndürür.
         /// </summary>
         public bool IsOldWordFormat(string inputPath)

@@ -122,7 +122,21 @@ for ($attempt = 0; $attempt -lt 10; $attempt++) {
     Start-Sleep -Seconds 1
 }
 
-Copy-Item -LiteralPath $stagedSetupPath -Destination $setupPath -Force
+$copyDeadline = (Get-Date).AddMinutes(3)
+$copied = $false
+while (-not $copied) {
+    try {
+        Copy-Item -LiteralPath $stagedSetupPath -Destination $setupPath -Force
+        $copied = $true
+    }
+    catch [System.IO.IOException] {
+        if ((Get-Date) -gt $copyDeadline) {
+            throw
+        }
+
+        Start-Sleep -Seconds 2
+    }
+}
 
 Get-Process iexpress -ErrorAction SilentlyContinue |
     Where-Object { $_.StartTime -ge $packageStart.AddSeconds(-5) } |

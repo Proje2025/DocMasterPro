@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Windows;
-using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DocConverter.Models;
@@ -16,10 +16,14 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
     private readonly PdfViewerService _viewerService;
     private readonly PdfTextSearchService _searchService;
     private readonly PdfAnnotationService _annotationService;
+    private readonly SemaphoreSlim _renderGate = new(2, 2);
     private CancellationTokenSource? _renderCts;
+    private int _renderGeneration;
 
     private const double ScreenDpi = 96d;
     private const double PdfPointDpi = 72d;
+    private const int RenderNeighborRadius = 2;
+    private const int CacheRadius = 7;
 
     public PdfStudioViewModel()
         : this(new PdfSessionService(), new PdfViewerService(), new PdfTextSearchService(), new PdfAnnotationService())
@@ -38,6 +42,8 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         _annotationService = annotationService;
     }
 
+    public event EventHandler<int>? ScrollToPageRequested;
+
     [ObservableProperty]
     private PdfDocumentSession? session;
 
@@ -48,15 +54,6 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
     private double zoomPercent = 100;
 
     [ObservableProperty]
-    private BitmapSource? currentPageImage;
-
-    [ObservableProperty]
-    private double pageViewWidth;
-
-    [ObservableProperty]
-    private double pageViewHeight;
-
-    [ObservableProperty]
     private bool isBusy;
 
     [ObservableProperty]
@@ -64,6 +61,9 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string searchQuery = "";
+
+    [ObservableProperty]
+    private string jumpToPageText = "";
 
     [ObservableProperty]
     private PdfSearchResult? selectedSearchResult;
@@ -83,13 +83,11 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private double annotationFontSize = 16;
 
+    public ObservableCollection<PdfPageViewItem> Pages { get; } = new();
+
     public ObservableCollection<PdfAnnotationItem> Annotations { get; } = new();
 
-    public ObservableCollection<PdfAnnotationItem> VisibleAnnotations { get; } = new();
-
     public ObservableCollection<PdfSearchResult> SearchResults { get; } = new();
-
-    public ObservableCollection<PdfSearchResult> VisibleSearchResults { get; } = new();
 
     public string CurrentFileName => Session?.FileName ?? "PDF açılmadı";
 
@@ -99,28 +97,35 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
 
     public bool HasSession => Session != null;
 
+    public PdfPageViewItem? CurrentPageItem =>
+        CurrentPageIndex >= 0 && CurrentPageIndex < Pages.Count ? Pages[CurrentPageIndex] : null;
+
     partial void OnSessionChanged(PdfDocumentSession? value)
     {
         OnPropertyChanged(nameof(CurrentFileName));
         OnPropertyChanged(nameof(PageLabel));
         OnPropertyChanged(nameof(DirtyLabel));
         OnPropertyChanged(nameof(HasSession));
+        OnPropertyChanged(nameof(CurrentPageItem));
         NotifyCommandStates();
     }
 
     partial void OnCurrentPageIndexChanged(int value)
     {
+        foreach (var page in Pages)
+            page.IsActive = page.PageIndex == value;
+
         OnPropertyChanged(nameof(PageLabel));
+        OnPropertyChanged(nameof(CurrentPageItem));
         NotifyCommandStates();
-        RefreshVisibleOverlays();
-        _ = RenderCurrentPageAsync();
     }
 
     partial void OnZoomPercentChanged(double value)
     {
+        UpdatePageMetrics();
+        ClearRenderedPages("Yakınlaştırma değişti");
         NotifyCommandStates();
-        RefreshVisibleOverlays();
-        _ = RenderCurrentPageAsync();
+        _ = EnsurePageWindowRenderedAsync(CurrentPageIndex);
     }
 
     partial void OnSelectedSearchResultChanged(PdfSearchResult? value)
@@ -128,10 +133,8 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         foreach (var result in SearchResults)
             result.IsActive = result == value;
 
-        if (value != null && value.PageIndex != CurrentPageIndex)
-            CurrentPageIndex = value.PageIndex;
-
-        RefreshVisibleOverlays();
+        if (value != null)
+            GoToPage(value.PageIndex, requestScroll: true);
     }
 
     partial void OnSelectedAnnotationChanged(PdfAnnotationItem? value)
@@ -167,35 +170,44 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         if (dialog.ShowDialog() != true)
             return;
 
-        await OpenPdfPathAsync(dialog.FileName);
+        await OpenPdfPathAsync(dialog.FileName, promptForUnsavedChanges: true);
     }
 
-    public async Task OpenPdfPathAsync(string path)
+    public async Task<bool> OpenPdfPathAsync(string path, bool promptForUnsavedChanges = false)
     {
+        if (promptForUnsavedChanges && !ConfirmReplaceOpenSession())
+            return false;
+
         IsBusy = true;
         StatusMessage = "PDF güvenli çalışma oturumu olarak açılıyor...";
 
         try
         {
-            _renderCts?.Cancel();
-            _sessionService.CleanupSession(Session);
+            string sourcePath = Path.GetFullPath(path);
+            var previousSession = Session;
+            var newSession = await _sessionService.OpenPdfSessionAsync(sourcePath);
 
-            Session = await _sessionService.OpenPdfSessionAsync(path);
-            CurrentPageIndex = 0;
+            ResetRenderWork();
+            Session = newSession;
+            Pages.Clear();
             Annotations.Clear();
-            VisibleAnnotations.Clear();
             SearchResults.Clear();
-            VisibleSearchResults.Clear();
             SelectedAnnotation = null;
             SelectedSearchResult = null;
+            BuildPageList(newSession.WorkingPath);
+            CurrentPageIndex = 0;
+            _sessionService.CleanupSession(previousSession);
 
-            await RenderCurrentPageAsync();
+            StatusMessage = $"{newSession.PageCount} sayfa bulundu. Görünür sayfalar arka planda hazırlanıyor.";
+            await EnsurePageWindowRenderedAsync(0);
             StatusMessage = "PDF açıldı. Kaynak dosya çalışma kopyası üzerinden korunuyor.";
+            return true;
         }
         catch (Exception ex)
         {
             StatusMessage = "PDF açılamadı";
             MessageBox.Show(ex.Message, "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
         }
         finally
         {
@@ -262,13 +274,13 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanGoPrevious))]
     private void PreviousPage()
     {
-        CurrentPageIndex--;
+        GoToPage(CurrentPageIndex - 1, requestScroll: true);
     }
 
     [RelayCommand(CanExecute = nameof(CanGoNext))]
     private void NextPage()
     {
-        CurrentPageIndex++;
+        GoToPage(CurrentPageIndex + 1, requestScroll: true);
     }
 
     [RelayCommand(CanExecute = nameof(HasOpenSession))]
@@ -289,6 +301,18 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         ZoomPercent = 100;
     }
 
+    [RelayCommand(CanExecute = nameof(HasOpenSession))]
+    private void GoToPage()
+    {
+        if (!int.TryParse(JumpToPageText, out int pageNumber))
+        {
+            StatusMessage = "Geçerli bir sayfa numarası girin";
+            return;
+        }
+
+        GoToPage(pageNumber - 1, requestScroll: true);
+    }
+
     [RelayCommand]
     private void SelectTool(string? toolName)
     {
@@ -303,7 +327,8 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
             return;
 
         SearchResults.Clear();
-        VisibleSearchResults.Clear();
+        foreach (var page in Pages)
+            page.SearchResults.Clear();
         SelectedSearchResult = null;
 
         if (string.IsNullOrWhiteSpace(SearchQuery))
@@ -319,7 +344,12 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         {
             var results = await _searchService.SearchAsync(Session.WorkingPath, SearchQuery);
             foreach (var result in results)
+            {
+                UpdateViewBounds(result);
                 SearchResults.Add(result);
+                if (result.PageIndex >= 0 && result.PageIndex < Pages.Count)
+                    Pages[result.PageIndex].SearchResults.Add(result);
+            }
 
             if (SearchResults.Count == 0)
             {
@@ -329,7 +359,6 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
 
             SelectedSearchResult = SearchResults[0];
             StatusMessage = $"{SearchResults.Count} sonuç bulundu";
-            RefreshVisibleOverlays();
         }
         catch (Exception ex)
         {
@@ -364,10 +393,10 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         if (SelectedAnnotation == null)
             return;
 
+        RemoveAnnotationFromPage(SelectedAnnotation);
         Annotations.Remove(SelectedAnnotation);
         SelectedAnnotation = null;
         MarkDirty();
-        RefreshVisibleOverlays();
     }
 
     [RelayCommand(CanExecute = nameof(CanApplyAnnotationProperties))]
@@ -379,25 +408,28 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         SelectedAnnotation.Text = AnnotationText;
         SelectedAnnotation.Color = AnnotationColor;
         SelectedAnnotation.FontSize = AnnotationFontSize;
+        UpdateViewBounds(SelectedAnnotation);
         MarkDirty();
-        RefreshVisibleOverlays();
     }
 
-    public void AddAnnotationAt(double viewX, double viewY)
+    public void AddAnnotationAt(int pageIndex, double viewX, double viewY)
     {
         if (Session == null || SelectedTool == PdfStudioTool.Select)
             return;
 
+        if (pageIndex < 0 || pageIndex >= Pages.Count)
+            return;
+
         if (SelectedTool == PdfStudioTool.Eraser)
         {
-            EraseAt(viewX, viewY);
+            EraseAt(pageIndex, viewX, viewY);
             return;
         }
 
         double scale = CurrentScale;
         var annotation = new PdfAnnotationItem
         {
-            PageIndex = CurrentPageIndex,
+            PageIndex = pageIndex,
             Type = SelectedTool switch
             {
                 PdfStudioTool.Text => PdfAnnotationType.Text,
@@ -420,14 +452,38 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         UpdateViewBounds(annotation);
 
         Annotations.Add(annotation);
+        Pages[pageIndex].Annotations.Add(annotation);
         SelectedAnnotation = annotation;
         MarkDirty();
-        RefreshVisibleOverlays();
     }
 
     public void SelectAnnotation(PdfAnnotationItem? annotation)
     {
         SelectedAnnotation = annotation;
+    }
+
+    public void SetCurrentPageFromView(int pageIndex)
+    {
+        if (pageIndex < 0 || pageIndex >= Pages.Count || pageIndex == CurrentPageIndex)
+            return;
+
+        CurrentPageIndex = pageIndex;
+    }
+
+    public async Task EnsurePageWindowRenderedAsync(int centerPageIndex)
+    {
+        if (Session == null || Pages.Count == 0)
+            return;
+
+        int start = Math.Max(0, centerPageIndex - RenderNeighborRadius);
+        int end = Math.Min(Pages.Count - 1, centerPageIndex + RenderNeighborRadius);
+        var token = _renderCts?.Token ?? CancellationToken.None;
+        int generation = _renderGeneration;
+
+        for (int index = start; index <= end; index++)
+            await EnsurePageRenderedAsync(Pages[index], generation, token);
+
+        TrimRenderedPages(centerPageIndex);
     }
 
     private async Task SaveToAsync(string outputPath)
@@ -472,51 +528,130 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         return output;
     }
 
-    private async Task RenderCurrentPageAsync()
+    private void BuildPageList(string pdfPath)
     {
-        if (Session == null)
+        var sizes = _viewerService.GetPageSizes(pdfPath);
+        Pages.Clear();
+
+        for (int index = 0; index < sizes.Count; index++)
+        {
+            var size = sizes[index];
+            var page = new PdfPageViewItem(index, size.Width, size.Height);
+            ApplyPageMetric(page);
+            Pages.Add(page);
+        }
+
+        if (Pages.Count > 0)
+            Pages[0].IsActive = true;
+    }
+
+    private async Task EnsurePageRenderedAsync(PdfPageViewItem page, int generation, CancellationToken token)
+    {
+        if (page.Image != null || page.IsRendering || generation != _renderGeneration)
             return;
 
-        _renderCts?.Cancel();
-        _renderCts = new CancellationTokenSource();
-        var token = _renderCts.Token;
-
+        await _renderGate.WaitAsync(token);
         try
         {
-            var rendered = await _viewerService.RenderPageAsync(Session.WorkingPath, CurrentPageIndex, ZoomPercent, token);
-            if (token.IsCancellationRequested)
+            if (page.Image != null || page.IsRendering || generation != _renderGeneration)
                 return;
 
-            CurrentPageImage = rendered.Image;
-            PageViewWidth = rendered.Width;
-            PageViewHeight = rendered.Height;
-            RefreshVisibleOverlays();
+            page.IsRendering = true;
+            page.RenderStatus = "Sayfa hazırlanıyor...";
+
+            var rendered = await _viewerService.RenderPageAsync(Session!.WorkingPath, page.PageIndex, ZoomPercent, token);
+            if (token.IsCancellationRequested || generation != _renderGeneration)
+                return;
+
+            page.Image = rendered.Image;
+            page.ViewWidth = rendered.Width;
+            page.ViewHeight = rendered.Height;
+            page.RenderStatus = "";
         }
         catch (OperationCanceledException)
         {
         }
         catch (Exception ex)
         {
+            page.RenderStatus = "Sayfa render edilemedi";
             StatusMessage = "PDF sayfası render edilemedi";
             FileLogger.LogError("PdfStudioRender", ex);
         }
+        finally
+        {
+            page.IsRendering = false;
+            _renderGate.Release();
+        }
     }
 
-    private void RefreshVisibleOverlays()
+    private void UpdatePageMetrics()
     {
-        foreach (var annotation in Annotations)
-            UpdateViewBounds(annotation);
+        foreach (var page in Pages)
+        {
+            ApplyPageMetric(page);
 
-        foreach (var result in SearchResults)
-            UpdateViewBounds(result);
+            foreach (var annotation in page.Annotations)
+                UpdateViewBounds(annotation);
 
-        VisibleAnnotations.Clear();
-        foreach (var item in Annotations.Where(a => a.PageIndex == CurrentPageIndex))
-            VisibleAnnotations.Add(item);
+            foreach (var result in page.SearchResults)
+                UpdateViewBounds(result);
+        }
+    }
 
-        VisibleSearchResults.Clear();
-        foreach (var item in SearchResults.Where(r => r.PageIndex == CurrentPageIndex))
-            VisibleSearchResults.Add(item);
+    private void ApplyPageMetric(PdfPageViewItem page)
+    {
+        double scale = CurrentScale;
+        page.ViewWidth = Math.Max(1, Math.Round(page.SourceWidth * scale));
+        page.ViewHeight = Math.Max(1, Math.Round(page.SourceHeight * scale));
+    }
+
+    private void ClearRenderedPages(string status)
+    {
+        ResetRenderWork();
+        foreach (var page in Pages)
+        {
+            page.Image = null;
+            page.IsRendering = false;
+            page.RenderStatus = status;
+        }
+    }
+
+    private void TrimRenderedPages(int centerPageIndex)
+    {
+        foreach (var page in Pages)
+        {
+            if (Math.Abs(page.PageIndex - centerPageIndex) <= CacheRadius)
+                continue;
+
+            if (page.Image == null || page.IsRendering)
+                continue;
+
+            page.Image = null;
+            page.RenderStatus = "Sayfa beklemede";
+        }
+    }
+
+    private CancellationToken ResetRenderWork()
+    {
+        _renderCts?.Cancel();
+        _renderCts?.Dispose();
+        _renderCts = new CancellationTokenSource();
+        _renderGeneration++;
+        return _renderCts.Token;
+    }
+
+    private void GoToPage(int pageIndex, bool requestScroll)
+    {
+        if (Session == null || Pages.Count == 0)
+            return;
+
+        int target = Math.Clamp(pageIndex, 0, Pages.Count - 1);
+        CurrentPageIndex = target;
+        JumpToPageText = (target + 1).ToString(CultureInfo.InvariantCulture);
+        _ = EnsurePageWindowRenderedAsync(target);
+
+        if (requestScroll)
+            ScrollToPageRequested?.Invoke(this, target);
     }
 
     private void UpdateViewBounds(PdfAnnotationItem annotation)
@@ -565,9 +700,9 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void EraseAt(double viewX, double viewY)
+    private void EraseAt(int pageIndex, double viewX, double viewY)
     {
-        var hit = VisibleAnnotations.LastOrDefault(a =>
+        var hit = Pages[pageIndex].Annotations.LastOrDefault(a =>
             viewX >= a.ViewX &&
             viewX <= a.ViewX + a.ViewWidth &&
             viewY >= a.ViewY &&
@@ -576,10 +711,16 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         if (hit == null)
             return;
 
+        RemoveAnnotationFromPage(hit);
         Annotations.Remove(hit);
         SelectedAnnotation = null;
         MarkDirty();
-        RefreshVisibleOverlays();
+    }
+
+    private void RemoveAnnotationFromPage(PdfAnnotationItem annotation)
+    {
+        if (annotation.PageIndex >= 0 && annotation.PageIndex < Pages.Count)
+            Pages[annotation.PageIndex].Annotations.Remove(annotation);
     }
 
     private void MarkDirty()
@@ -590,6 +731,20 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         Session.IsDirty = true;
         OnPropertyChanged(nameof(DirtyLabel));
         NotifyCommandStates();
+    }
+
+    private bool ConfirmReplaceOpenSession()
+    {
+        if (Session?.IsDirty != true)
+            return true;
+
+        var result = MessageBox.Show(
+            "Açık PDF'de kaydedilmemiş değişiklikler var. Yeni PDF açılırsa bu değişiklikler atılacak. Devam edilsin mi?",
+            "DocMaster Pro",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        return result == MessageBoxResult.Yes;
     }
 
     private double CurrentScale => Math.Max(0.25, ZoomPercent / 100d) * ScreenDpi / PdfPointDpi;
@@ -618,6 +773,7 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         ZoomInCommand.NotifyCanExecuteChanged();
         ZoomOutCommand.NotifyCanExecuteChanged();
         FitWidthCommand.NotifyCanExecuteChanged();
+        GoToPageCommand.NotifyCanExecuteChanged();
         SearchCommand.NotifyCanExecuteChanged();
         NextSearchResultCommand.NotifyCanExecuteChanged();
         PreviousSearchResultCommand.NotifyCanExecuteChanged();
@@ -629,6 +785,8 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
     {
         _renderCts?.Cancel();
         _renderCts?.Dispose();
+        _renderGate.Dispose();
         _sessionService.CleanupSession(Session);
+        GC.SuppressFinalize(this);
     }
 }

@@ -8,6 +8,9 @@ $ErrorActionPreference = 'Stop'
 $appName = 'DocMaster Pro'
 $installDir = Join-Path $env:ProgramFiles $appName
 $payloadName = 'DocMasterProPayload.zip'
+$progId = 'DocMasterPro.PDF'
+$registeredApplicationName = 'DocMaster Pro'
+$capabilitiesRelativePath = 'Software\DocMasterPro\Capabilities'
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -39,6 +42,49 @@ function New-Shortcut {
     $shortcut.WorkingDirectory = $WorkingDirectory
     $shortcut.IconLocation = $IconLocation
     $shortcut.Save()
+}
+
+function Register-PdfAssociation {
+    param(
+        [string]$ExePath
+    )
+
+    $classesRoot = 'HKLM:\Software\Classes'
+    $progIdPath = Join-Path $classesRoot $progId
+    $defaultIconPath = Join-Path $progIdPath 'DefaultIcon'
+    $commandPath = Join-Path $progIdPath 'shell\open\command'
+    $openWithProgIdsPath = Join-Path $classesRoot '.pdf\OpenWithProgids'
+    $applicationPath = Join-Path $classesRoot 'Applications\DocConverter.exe'
+    $applicationCommandPath = Join-Path $applicationPath 'shell\open\command'
+    $applicationSupportedTypesPath = Join-Path $applicationPath 'SupportedTypes'
+    $capabilitiesPath = 'HKLM:\Software\DocMasterPro\Capabilities'
+    $fileAssociationsPath = Join-Path $capabilitiesPath 'FileAssociations'
+    $registeredApplicationsPath = 'HKLM:\Software\RegisteredApplications'
+    $openCommand = '"' + $ExePath + '" "%1"'
+
+    New-Item -Path $progIdPath -Force | Out-Null
+    Set-Item -Path $progIdPath -Value 'DocMaster Pro PDF Document'
+    New-Item -Path $defaultIconPath -Force | Out-Null
+    Set-Item -Path $defaultIconPath -Value "$ExePath,0"
+    New-Item -Path $commandPath -Force | Out-Null
+    Set-Item -Path $commandPath -Value $openCommand
+
+    New-Item -Path $openWithProgIdsPath -Force | Out-Null
+    New-ItemProperty -Path $openWithProgIdsPath -Name $progId -Value ([byte[]]@()) -PropertyType Binary -Force | Out-Null
+
+    New-Item -Path $applicationPath -Force | Out-Null
+    New-Item -Path $applicationCommandPath -Force | Out-Null
+    Set-Item -Path $applicationCommandPath -Value $openCommand
+    New-Item -Path $applicationSupportedTypesPath -Force | Out-Null
+    New-ItemProperty -Path $applicationSupportedTypesPath -Name '.pdf' -Value '' -PropertyType String -Force | Out-Null
+
+    New-Item -Path $capabilitiesPath -Force | Out-Null
+    New-Item -Path $fileAssociationsPath -Force | Out-Null
+    New-ItemProperty -Path $capabilitiesPath -Name ApplicationName -Value $appName -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $capabilitiesPath -Name ApplicationDescription -Value 'Open PDF files with DocMaster Pro PDF Studio.' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $capabilitiesPath -Name ApplicationIcon -Value "$ExePath,0" -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $fileAssociationsPath -Name '.pdf' -Value $progId -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $registeredApplicationsPath -Name $registeredApplicationName -Value $capabilitiesRelativePath -PropertyType String -Force | Out-Null
 }
 
 if (-not (Test-IsAdministrator)) {
@@ -83,6 +129,8 @@ try {
         throw "Application executable not found after install: $exePath"
     }
 
+    Register-PdfAssociation -ExePath $exePath
+
     $uninstallPath = Join-Path $installDir 'uninstall.ps1'
     $uninstallScript = @"
 param([switch]`$Elevated)
@@ -90,6 +138,8 @@ param([switch]`$Elevated)
 `$ErrorActionPreference = 'SilentlyContinue'
 `$appName = '$appName'
 `$installDir = '$installDir'
+`$progId = '$progId'
+`$registeredApplicationName = '$registeredApplicationName'
 
 function Test-IsAdministrator {
     `$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -106,6 +156,11 @@ if (-not (Test-IsAdministrator)) {
 Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) (`$appName + '.lnk')) -Force
 Remove-Item -LiteralPath (Join-Path `$env:ProgramData 'Microsoft\Windows\Start Menu\Programs\DocMaster Pro') -Recurse -Force
 Remove-Item -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DocMasterPro' -Recurse -Force
+Remove-ItemProperty -LiteralPath 'HKLM:\Software\Classes\.pdf\OpenWithProgids' -Name `$progId -Force
+Remove-ItemProperty -LiteralPath 'HKLM:\Software\RegisteredApplications' -Name `$registeredApplicationName -Force
+Remove-Item -LiteralPath 'HKLM:\Software\Classes\DocMasterPro.PDF' -Recurse -Force
+Remove-Item -LiteralPath 'HKLM:\Software\Classes\Applications\DocConverter.exe' -Recurse -Force
+Remove-Item -LiteralPath 'HKLM:\Software\DocMasterPro' -Recurse -Force
 Remove-Item -LiteralPath `$installDir -Recurse -Force
 "@
     Set-Content -LiteralPath $uninstallPath -Value $uninstallScript -Encoding UTF8 -Force

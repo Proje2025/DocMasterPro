@@ -1,5 +1,6 @@
 using DocConverter.Models;
 using DocConverter.Services;
+using DocConverter.ViewModels;
 using FluentAssertions;
 using PdfSharp.Drawing;
 using PdfSharp.Fonts;
@@ -115,6 +116,39 @@ public class PdfStudioServiceTests
     }
 
     [Fact]
+    public async Task PdfStudioViewModel_OpenLargePdf_RendersOnlyNearbyPages()
+    {
+        string tempDir = CreateTempDir();
+        try
+        {
+            string source = Path.Combine(tempDir, "large.pdf");
+            CreateTextPdf(source, "Large document", pageCount: 50);
+
+            using var viewModel = new PdfStudioViewModel(
+                new PdfSessionService(Path.Combine(tempDir, "sessions")),
+                new PdfViewerService(),
+                new PdfTextSearchService(),
+                new PdfAnnotationService());
+
+            bool opened = await viewModel.OpenPdfPathAsync(source);
+            opened.Should().BeTrue();
+            viewModel.Pages.Should().HaveCount(50);
+            viewModel.Pages.Count(page => page.Image != null).Should().BeLessThanOrEqualTo(5);
+
+            viewModel.SetCurrentPageFromView(25);
+            await viewModel.EnsurePageWindowRenderedAsync(25);
+
+            viewModel.CurrentPageIndex.Should().Be(25);
+            viewModel.Pages.Count(page => page.Image != null).Should().BeLessThanOrEqualTo(8);
+            viewModel.Pages[25].Image.Should().NotBeNull();
+        }
+        finally
+        {
+            DeleteTempDir(tempDir);
+        }
+    }
+
+    [Fact]
     public async Task ApplyAnnotationsAsync_FlattensOverlayIntoOutputPdf()
     {
         string tempDir = CreateTempDir();
@@ -195,15 +229,19 @@ public class PdfStudioServiceTests
         }
     }
 
-    private static void CreateTextPdf(string path, string text)
+    private static void CreateTextPdf(string path, string text, int pageCount = 1)
     {
         using var document = new PdfDocument();
-        var page = document.AddPage();
-        page.Width = XUnit.FromPoint(595);
-        page.Height = XUnit.FromPoint(842);
 
-        using var gfx = XGraphics.FromPdfPage(page);
-        gfx.DrawString(text, new XFont("Arial", 14), XBrushes.Black, new XPoint(72, 100));
+        for (int index = 0; index < pageCount; index++)
+        {
+            var page = document.AddPage();
+            page.Width = XUnit.FromPoint(595);
+            page.Height = XUnit.FromPoint(842);
+
+            using var gfx = XGraphics.FromPdfPage(page);
+            gfx.DrawString($"{text} {index + 1}", new XFont("Arial", 14), XBrushes.Black, new XPoint(72, 100));
+        }
 
         document.Save(path);
     }

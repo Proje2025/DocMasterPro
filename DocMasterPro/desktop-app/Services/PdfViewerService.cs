@@ -70,6 +70,18 @@ public class PdfViewerService
         return GetPageSize(document, pageIndex);
     }
 
+    public IReadOnlyList<SizeF> GetPageSizes(string pdfPath)
+    {
+        EnsurePdfiumLoaded();
+        using var document = PdfDocument.Load(pdfPath);
+        var sizes = new List<SizeF>(document.PageCount);
+
+        for (int pageIndex = 0; pageIndex < document.PageCount; pageIndex++)
+            sizes.Add(GetPageSize(document, pageIndex));
+
+        return sizes;
+    }
+
     public void Print(string pdfPath)
     {
         EnsurePdfiumLoaded();
