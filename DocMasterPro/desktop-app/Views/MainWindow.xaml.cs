@@ -21,6 +21,13 @@ namespace DocConverter.Views
         {
             InitializeComponent();
             Title = "DocMaster Pro - PDF Studio";
+            Loaded += MainWindow_Loaded;
+        }
+
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                await vm.CheckForUpdatesOnStartupAsync();
         }
 
         public async Task OpenPdfInStudioAsync(string path, string? successStatusMessage = null)
@@ -71,6 +78,11 @@ namespace DocConverter.Views
             HandleFileDrop(e, "Office");
         }
 
+        private void PdfToWordTab_Drop(object sender, DragEventArgs e)
+        {
+            HandleFileDrop(e, "PdfToWord");
+        }
+
         private void HandleFileDrop(DragEventArgs e, string listType)
         {
             if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return;
@@ -114,6 +126,10 @@ namespace DocConverter.Views
                     case "Office":
                         if (PathValidator.OfficeExtensions.Contains(ext))
                             vm.OfficeDocuments.Add(item);
+                        break;
+                    case "PdfToWord":
+                        if (ext == ".pdf")
+                            vm.PdfToWordDocuments.Add(item);
                         break;
                 }
             }
@@ -164,6 +180,11 @@ namespace DocConverter.Views
             HandleListViewDrop(e, "Office");
         }
 
+        private void PdfToWordListView_Drop(object sender, DragEventArgs e)
+        {
+            HandleListViewDrop(e, "PdfToWord");
+        }
+
         private void HandleListViewDrop(DragEventArgs e, string listType)
         {
             if (!_isDragging) return;
@@ -199,6 +220,7 @@ namespace DocConverter.Views
                     "Merge" => vm.MergeDocuments,
                     "Image" => vm.ImageDocuments,
                     "Office" => vm.OfficeDocuments,
+                    "PdfToWord" => vm.PdfToWordDocuments,
                     _ => null!
                 };
 

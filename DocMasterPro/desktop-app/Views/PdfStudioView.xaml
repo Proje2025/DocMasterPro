@@ -5,9 +5,9 @@
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
     <Style x:Key="StudioButton" TargetType="Button">
-      <Setter Property="Padding" Value="12,7"/>
+      <Setter Property="Padding" Value="10,6"/>
       <Setter Property="Margin" Value="3"/>
-      <Setter Property="MinWidth" Value="82"/>
+      <Setter Property="MinWidth" Value="74"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="BorderBrush" Value="#D7DEE8"/>
       <Setter Property="Background" Value="#FFFFFF"/>
@@ -43,6 +43,12 @@
       <Setter Property="BorderBrush" Value="#2563EB"/>
     </Style>
 
+    <Style x:Key="ToolButton" BasedOn="{StaticResource StudioButton}" TargetType="Button">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="MinWidth" Value="0"/>
+      <Setter Property="Margin" Value="0,3"/>
+    </Style>
+
   </UserControl.Resources>
 
   <Grid Background="#F3F6FA"
@@ -56,7 +62,7 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#DFE5EE" BorderThickness="0,0,0,1" Padding="14,10">
+    <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#DFE5EE" BorderThickness="0,0,0,1" Padding="12,9">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
@@ -74,19 +80,26 @@
           <Button Content="Yazdır" Style="{StaticResource StudioButton}" Command="{Binding PrintCommand}"/>
         </StackPanel>
 
-        <Separator Grid.Column="1" Margin="12,0" Width="1" Background="#DFE5EE"/>
+        <Separator Grid.Column="1" Margin="10,0" Width="1" Background="#DFE5EE"/>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Text="{Binding PageLabel}" VerticalAlignment="Center" Margin="8,0" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding PageLabel}" VerticalAlignment="Center" Margin="6,0" FontWeight="SemiBold"/>
           <Button Content="-" Style="{StaticResource StudioButton}" MinWidth="34" Command="{Binding ZoomOutCommand}"/>
-          <TextBlock Text="{Binding ZoomPercent, StringFormat={}{0:0}%}" VerticalAlignment="Center" Margin="8,0"/>
+          <TextBlock Text="{Binding ZoomPercent, StringFormat={}{0:0}%}" VerticalAlignment="Center" Margin="6,0"/>
           <Button Content="+" Style="{StaticResource StudioButton}" MinWidth="34" Command="{Binding ZoomInCommand}"/>
           <Button Content="Sığdır" Style="{StaticResource StudioButton}" Command="{Binding FitWidthCommand}"/>
+          <TextBox Width="56"
+                   Height="30"
+                   Margin="10,0,3,0"
+                   VerticalContentAlignment="Center"
+                   Text="{Binding JumpToPageText, UpdateSourceTrigger=PropertyChanged}"
+                   ToolTip="Sayfa numarası"/>
+          <Button Content="Git" Style="{StaticResource StudioButton}" MinWidth="44" Command="{Binding GoToPageCommand}"/>
         </StackPanel>
 
         <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBox Width="220"
-                   Height="32"
+          <TextBox Width="190"
+                   Height="30"
                    Margin="8,0,4,0"
                    VerticalContentAlignment="Center"
                    Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
@@ -100,80 +113,203 @@
                    Text="{Binding DirtyLabel}"
                    VerticalAlignment="Center"
                    Foreground="#637083"
-                   Margin="12,0,0,0"/>
+                   Margin="10,0,0,0"/>
       </Grid>
     </Border>
 
     <Grid Grid.Row="1">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="260"/>
       </Grid.ColumnDefinitions>
 
-      <Grid Grid.Column="0" Margin="16">
+      <Grid Grid.Column="0" Margin="14">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#DFE5EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#DFE5EE" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-              <TextBlock Text="{Binding CurrentFileName}" FontSize="18" FontWeight="SemiBold" Foreground="#172033"/>
+              <TextBlock Text="{Binding CurrentFileName}" FontSize="17" FontWeight="SemiBold" Foreground="#172033"/>
               <TextBlock Text="{Binding StatusMessage}" Margin="0,3,0,0" Foreground="#637083"/>
             </StackPanel>
-            <TextBlock Grid.Column="1" Text="{Binding PageLabel}" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="#2563EB"/>
+            <TextBlock Grid.Column="1" Text="{Binding PageLabel}" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Foreground="#2563EB"/>
           </Grid>
         </Border>
 
         <Border Grid.Row="1" Background="#DCE3ED" CornerRadius="8" ClipToBounds="True">
-          <ScrollViewer x:Name="DocumentScrollViewer"
-                        HorizontalScrollBarVisibility="Auto"
-                        VerticalScrollBarVisibility="Auto"
-                        PreviewMouseWheel="DocumentScrollViewer_PreviewMouseWheel">
-            <Grid Margin="28" HorizontalAlignment="Center" VerticalAlignment="Top">
-              <Border Background="White" BorderBrush="#C8D2DF" BorderThickness="1" Padding="0">
-                <Grid Width="{Binding PageViewWidth}" Height="{Binding PageViewHeight}">
-                  <Image Source="{Binding CurrentPageImage}"
-                         Width="{Binding PageViewWidth}"
-                         Height="{Binding PageViewHeight}"
-                         Stretch="Fill"
-                         RenderOptions.BitmapScalingMode="HighQuality"/>
+          <ListBox x:Name="DocumentPagesList"
+                   ItemsSource="{Binding Pages}"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   Padding="28,22"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.CanContentScroll="True"
+                   VirtualizingPanel.IsVirtualizing="True"
+                   VirtualizingPanel.VirtualizationMode="Recycling"
+                   VirtualizingPanel.CacheLength="2"
+                   ScrollViewer.ScrollChanged="DocumentPagesList_ScrollChanged">
+            <ListBox.ItemContainerStyle>
+              <Style TargetType="ListBoxItem">
+                <EventSetter Event="Loaded" Handler="PdfStudioPageItem_Loaded"/>
+                <EventSetter Event="Unloaded" Handler="PdfStudioPageItem_Unloaded"/>
+                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Margin" Value="0,0,0,18"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="Template">
+                  <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                      <ContentPresenter/>
+                    </ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel HorizontalAlignment="Center">
+                  <TextBlock Text="{Binding PageLabel}"
+                             HorizontalAlignment="Center"
+                             Margin="0,0,0,6"
+                             Foreground="#526071"
+                             FontWeight="SemiBold"/>
+                  <Border Background="White"
+                          BorderBrush="#B9C5D3"
+                          BorderThickness="1"
+                          SnapsToDevicePixels="True">
+                    <Grid Width="{Binding ViewWidth}"
+                          Height="{Binding ViewHeight}"
+                          Background="White"
+                          MouseLeftButtonDown="PageSurface_MouseLeftButtonDown">
+                      <Image Source="{Binding Image}"
+                             Width="{Binding ViewWidth}"
+                             Height="{Binding ViewHeight}"
+                             Stretch="Fill"
+                             RenderOptions.BitmapScalingMode="HighQuality"/>
 
-                  <ItemsControl ItemsSource="{Binding VisibleSearchResults}" IsHitTestVisible="False">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <Canvas Width="{Binding PageViewWidth}" Height="{Binding PageViewHeight}"/>
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemContainerStyle>
-                      <Style TargetType="ContentPresenter">
-                        <Setter Property="Canvas.Left" Value="{Binding ViewX}"/>
-                        <Setter Property="Canvas.Top" Value="{Binding ViewY}"/>
-                      </Style>
-                    </ItemsControl.ItemContainerStyle>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate>
-                        <Border Width="{Binding ViewWidth}"
-                                Height="{Binding ViewHeight}"
-                                Background="#FFF2A8"
-                                BorderBrush="#E3B600"
-                                BorderThickness="1"
-                                Opacity="0.65"/>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
+                      <TextBlock Text="{Binding RenderStatus}"
+                                 Foreground="#637083"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Image}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
 
-                </Grid>
-              </Border>
-            </Grid>
-          </ScrollViewer>
+                      <ItemsControl ItemsSource="{Binding SearchResults}" IsHitTestVisible="False">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <Canvas Width="{Binding ViewWidth}" Height="{Binding ViewHeight}"/>
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                          <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding ViewX}"/>
+                            <Setter Property="Canvas.Top" Value="{Binding ViewY}"/>
+                          </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Width="{Binding ViewWidth}"
+                                    Height="{Binding ViewHeight}"
+                                    Background="#FFF2A8"
+                                    BorderBrush="#E3B600"
+                                    BorderThickness="1"
+                                    Opacity="0.65"/>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+
+                      <ItemsControl ItemsSource="{Binding Annotations}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <Canvas Width="{Binding ViewWidth}" Height="{Binding ViewHeight}"/>
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                          <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding ViewX}"/>
+                            <Setter Property="Canvas.Top" Value="{Binding ViewY}"/>
+                          </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Width="{Binding ViewWidth}"
+                                    Height="{Binding ViewHeight}"
+                                    Background="{Binding Color}"
+                                    BorderBrush="#1E293B"
+                                    BorderThickness="1"
+                                    Opacity="{Binding Opacity}"
+                                    MouseLeftButtonDown="Annotation_MouseLeftButtonDown">
+                              <TextBlock Text="{Binding Text}"
+                                         Margin="6,4"
+                                         TextWrapping="Wrap"
+                                         Foreground="#172033"
+                                         FontSize="{Binding FontSize}"/>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Grid>
+                  </Border>
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
         </Border>
       </Grid>
 
+      <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#DFE5EE" BorderThickness="1,0,0,0" Padding="14">
+        <StackPanel>
+          <TextBlock Text="Araçlar" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+          <Button Content="Seç" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Select"/>
+          <Button Content="Metin" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Text"/>
+          <Button Content="Vurgula" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Highlight"/>
+          <Button Content="Not" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Note"/>
+          <Button Content="Kutu" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Rectangle"/>
+          <Button Content="Silgi" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Eraser"/>
+
+          <Separator Margin="0,14"/>
+          <TextBlock Text="Özellikler" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+          <TextBlock Text="Metin" Foreground="#637083"/>
+          <TextBox Text="{Binding AnnotationText, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
+          <TextBlock Text="Renk" Foreground="#637083"/>
+          <TextBox Text="{Binding AnnotationColor, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
+          <TextBlock Text="Yazı boyutu" Foreground="#637083"/>
+          <TextBox Text="{Binding AnnotationFontSize, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
+          <Button Content="Uygula" Style="{StaticResource PrimaryStudioButton}" HorizontalAlignment="Stretch" Command="{Binding ApplyAnnotationPropertiesCommand}"/>
+          <Button Content="Seçileni Sil" Style="{StaticResource StudioButton}" HorizontalAlignment="Stretch" Command="{Binding DeleteSelectedAnnotationCommand}"/>
+
+          <Separator Margin="0,14"/>
+          <TextBlock Text="Arama Sonuçları" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+          <ListBox ItemsSource="{Binding SearchResults}"
+                   SelectedItem="{Binding SelectedSearchResult}"
+                   MinHeight="120"
+                   BorderBrush="#D7DEE8"
+                   BorderThickness="1">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" Margin="4"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </StackPanel>
+      </Border>
     </Grid>
 
     <ProgressBar Grid.Row="2"

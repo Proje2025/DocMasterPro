@@ -380,6 +380,47 @@
         </Grid>
       </TabItem>
 
+      <!-- Tab 6: PDF -> Word -->
+      <TabItem Header="PDF'den Word" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="PDF dosyalarını Microsoft Word ile düzenlenebilir DOCX dosyasına dönüştürün"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
+                  Background="#FAFAFA" AllowDrop="True"
+                  Drop="PdfToWordTab_Drop" DragEnter="MergeTab_DragEnter">
+            <ListView ItemsSource="{Binding PdfToWordDocuments}"
+                      ItemTemplate="{StaticResource FileListItemTemplate}"
+                      BorderThickness="0" Background="Transparent" Margin="8"
+                      PreviewMouseLeftButtonDown="ListView_PreviewMouseLeftButtonDown"
+                      MouseMove="ListView_MouseMove"
+                      Drop="PdfToWordListView_Drop"
+                      Tag="PdfToWord"/>
+          </Border>
+
+          <ProgressBar Grid.Row="2" Minimum="0" Maximum="100"
+                       Value="{Binding Progress}" Height="8" Margin="0,8,0,4"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+          <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="PDF Ekle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding AddPdfToWordFilesCommand}"/>
+            <Button Content="DOCX Oluştur" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding ConvertPdfToWordCommand}"
+                    Background="#28A745"/>
+            <Button Content="Temizle" Style="{StaticResource SecondaryButton}"
+                    Command="{Binding ClearPdfToWordCommand}"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
       <!-- Tab 6: PDF Düzenleme -->
       <TabItem Header="✏️ PDF Düzenle" Style="{StaticResource TabHeaderStyle}">
         <Grid Margin="12">
@@ -571,6 +612,25 @@
                     Command="{Binding SaveEditedPdfCommand}"
                     Background="#28A745"/>
           </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="Güncelleme" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="20">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="Uygulama güncellemeleri"
+                     FontSize="20" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+          <TextBlock Grid.Row="1" Text="Yeni sürümler GitHub Releases üzerinden denetlenir. Güncelleme bulunduğunda indirip kurabilirsiniz."
+                     FontSize="14" Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,16"/>
+          <Button Grid.Row="2" Content="Güncellemeleri Denetle"
+                  Style="{StaticResource PrimaryButton}"
+                  Command="{Binding CheckForUpdatesCommand}"
+                  HorizontalAlignment="Left" VerticalAlignment="Top"/>
         </Grid>
       </TabItem>
     </TabControl>

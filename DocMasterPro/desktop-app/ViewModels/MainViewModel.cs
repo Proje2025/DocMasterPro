@@ -26,6 +26,7 @@ namespace DocConverter.ViewModels
         private readonly PdfService _pdf = new();
         private readonly ConverterService _conv = new();
         private readonly OfficeConverterService _officeConv = new();
+        private readonly UpdateService _updateService = new();
         private readonly SemaphoreSlim _previewRenderGate = new(1, 1);
         private CancellationTokenSource? _cts;
         private CancellationTokenSource? _previewLoadCts;
@@ -86,7 +87,11 @@ namespace DocConverter.ViewModels
         [ObservableProperty]
         private ObservableCollection<DocumentItem> officeDocuments = new();
 
-        // ==================== Tab 6: PDF Düzenleme ====================
+        // ==================== Tab 6: PDF → Word ====================
+        [ObservableProperty]
+        private ObservableCollection<DocumentItem> pdfToWordDocuments = new();
+
+        // ==================== Tab 7: PDF Düzenleme ====================
         [ObservableProperty]
         private string editPdfPath = "";
 
@@ -111,12 +116,26 @@ namespace DocConverter.ViewModels
                 SelectedWorkspaceIndex = index;
         }
 
+        [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
+        public async Task CheckForUpdates()
+        {
+            await _updateService.CheckForUpdatesAsync(notifyWhenCurrent: true);
+        }
+
+        public async Task CheckForUpdatesOnStartupAsync()
+        {
+            await _updateService.CheckForUpdatesAsync(notifyWhenCurrent: false);
+        }
+
+        private bool CanCheckForUpdates() => !IsBusy;
+
         // ==================== Constructor ====================
         public MainViewModel()
         {
             MergeDocuments.CollectionChanged += (_, _) => MergeCommand.NotifyCanExecuteChanged();
             ImageDocuments.CollectionChanged += (_, _) => ConvertImagesToPdfCommand.NotifyCanExecuteChanged();
             OfficeDocuments.CollectionChanged += (_, _) => ConvertOfficeToPdfCommand.NotifyCanExecuteChanged();
+            PdfToWordDocuments.CollectionChanged += (_, _) => ConvertPdfToWordCommand.NotifyCanExecuteChanged();
             PdfPages.CollectionChanged += (_, _) => NotifyEditCommandStates();
         }
 
@@ -127,6 +146,8 @@ namespace DocConverter.ViewModels
             ConvertImagesToPdfCommand.NotifyCanExecuteChanged();
             ExportPdfToImagesCommand.NotifyCanExecuteChanged();
             ConvertOfficeToPdfCommand.NotifyCanExecuteChanged();
+            ConvertPdfToWordCommand.NotifyCanExecuteChanged();
+            CheckForUpdatesCommand.NotifyCanExecuteChanged();
             NotifyEditCommandStates();
         }
 
@@ -336,6 +357,7 @@ namespace DocConverter.ViewModels
             MergeDocuments.Remove(item);
             ImageDocuments.Remove(item);
             OfficeDocuments.Remove(item);
+            PdfToWordDocuments.Remove(item);
         }
 
         [RelayCommand]
@@ -774,6 +796,119 @@ namespace DocConverter.ViewModels
         public void ClearOffice()
         {
             OfficeDocuments.Clear();
+        }
+
+        // ==================== Tab 6: PDF → Word Komutları ====================
+        [RelayCommand]
+        public void AddPdfToWordFiles()
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "PDF Dosyaları|*.pdf|Tüm Dosyalar|*.*",
+                Multiselect = true
+            };
+
+            if (dlg.ShowDialog() != true) return;
+
+            foreach (var f in dlg.FileNames)
+            {
+                if (!PathValidator.IsPathSafe(f)) continue;
+                string ext = Path.GetExtension(f).ToLowerInvariant();
+                if (ext != ".pdf") continue;
+
+                PdfToWordDocuments.Add(CreateDocumentItem(f));
+            }
+        }
+
+        [RelayCommand(CanExecute = nameof(CanConvertPdfToWord))]
+        public async Task ConvertPdfToWord()
+        {
+            if (PdfToWordDocuments.Count == 0) return;
+
+            if (!_officeConv.IsOfficeInstalled())
+            {
+                MessageBox.Show(
+                    "PDF'den Word'e dönüştürme için Microsoft Word 2013 veya daha yeni bir sürüm kurulu olmalıdır.",
+                    "DocMaster Pro",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var folderDlg = new OpenFolderDialog { Title = "DOCX dosyalarının kaydedileceği klasörü seçin" };
+            if (folderDlg.ShowDialog() != true) return;
+
+            _cts = new CancellationTokenSource();
+            IsBusy = true;
+            Progress = 0;
+            StatusMessage = "PDF dosyaları Word'e dönüştürülüyor...";
+
+            try
+            {
+                int total = PdfToWordDocuments.Count;
+                int current = 0;
+
+                foreach (var doc in PdfToWordDocuments)
+                {
+                    _cts.Token.ThrowIfCancellationRequested();
+
+                    doc.Status = "Converting";
+                    current++;
+                    Progress = (current * 100) / total;
+                    StatusMessage = $"Dönüştürülüyor: {doc.FileName}";
+
+                    try
+                    {
+                        string outputPath = Path.Combine(folderDlg.FolderName,
+                            Path.GetFileNameWithoutExtension(doc.FileName) + ".docx");
+
+                        await _officeConv.ConvertPdfToWordAsync(doc.FilePath, outputPath, _cts.Token);
+                        doc.Status = "Done";
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        doc.Status = "Ready";
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        doc.Status = "Error";
+                        FileLogger.LogError($"PdfToWord ({doc.FileName})", ex);
+                    }
+                }
+
+                StatusMessage = "Tamamlandı";
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show("PDF'den Word'e dönüştürme tamamlandı!", "DocMaster Pro",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "İptal edildi";
+            }
+            finally
+            {
+                IsBusy = false;
+                Progress = 100;
+                _cts?.Dispose();
+                _cts = null;
+            }
+        }
+
+        private bool CanConvertPdfToWord() => !IsBusy && PdfToWordDocuments.Count > 0;
+
+        [RelayCommand]
+        public void RemovePdfToWordFile(DocumentItem item)
+        {
+            if (item != null) PdfToWordDocuments.Remove(item);
+        }
+
+        [RelayCommand]
+        public void ClearPdfToWord()
+        {
+            PdfToWordDocuments.Clear();
         }
 
         // ==================== Tab 6: PDF Düzenleme Komutları ====================
