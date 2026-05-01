@@ -185,7 +185,7 @@ Remove-Item -LiteralPath `$installDir -Recurse -Force
     $registryPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DocMasterPro'
     New-Item -Path $registryPath -Force | Out-Null
     New-ItemProperty -Path $registryPath -Name DisplayName -Value $appName -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $registryPath -Name DisplayVersion -Value '1.0.0' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $registryPath -Name DisplayVersion -Value '1.0.6' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $registryPath -Name Publisher -Value 'DocMaster Pro' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $registryPath -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $registryPath -Name DisplayIcon -Value $exePath -PropertyType String -Force | Out-Null

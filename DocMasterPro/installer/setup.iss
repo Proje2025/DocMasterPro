@@ -1,6 +1,6 @@
 [Setup]
 AppName=DocMaster Pro
-AppVersion=1.0
+AppVersion=1.0.6
 AppPublisher=DocMasterPro Team
 DefaultDirName={autopf}\DocMasterPro
 DefaultGroupName=DocMaster Pro
