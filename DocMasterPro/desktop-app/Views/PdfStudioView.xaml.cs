@@ -60,7 +60,7 @@ public partial class PdfStudioView : UserControl
             vm.StatusMessage = "Birden fazla dosya bırakıldı; ilk geçerli PDF açıldı.";
     }
 
-    private async void PdfStudioPageItem_Loaded(object sender, RoutedEventArgs e)
+    private void PdfStudioPageItem_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is not ListBoxItem { DataContext: PdfPageViewItem page })
             return;
@@ -69,7 +69,7 @@ public partial class PdfStudioView : UserControl
             return;
 
         UpdateCurrentPageFromViewport();
-        await vm.EnsurePageWindowRenderedAsync(page.PageIndex);
+        vm.QueuePageWindowRender(page.PageIndex);
     }
 
     private void PdfStudioPageItem_Unloaded(object sender, RoutedEventArgs e)
@@ -77,14 +77,14 @@ public partial class PdfStudioView : UserControl
         UpdateCurrentPageFromViewport();
     }
 
-    private async void DocumentPagesList_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    private void DocumentPagesList_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (DataContext is not PdfStudioViewModel vm)
             return;
 
         int? pageIndex = UpdateCurrentPageFromViewport();
         if (pageIndex.HasValue)
-            await vm.EnsurePageWindowRenderedAsync(pageIndex.Value);
+            vm.QueuePageWindowRender(pageIndex.Value);
     }
 
     private int? UpdateCurrentPageFromViewport()

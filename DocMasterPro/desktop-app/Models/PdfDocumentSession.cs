@@ -10,7 +10,8 @@ public partial class PdfDocumentSession : ObservableObject
         string workingPath,
         string sessionFolder,
         int pageCount,
-        DateTime openedAt)
+        DateTime openedAt,
+        bool isWorkingCopyReady = false)
     {
         OriginalPath = originalPath;
         WorkingPath = workingPath;
@@ -18,11 +19,13 @@ public partial class PdfDocumentSession : ObservableObject
         PageCount = pageCount;
         OpenedAt = openedAt;
         OutputPath = originalPath;
+        IsWorkingCopyReady = isWorkingCopyReady;
     }
 
     public string OriginalPath { get; }
 
-    public string WorkingPath { get; }
+    [ObservableProperty]
+    private string workingPath;
 
     public string SessionFolder { get; }
 
@@ -35,7 +38,12 @@ public partial class PdfDocumentSession : ObservableObject
     [ObservableProperty]
     private bool isDirty;
 
+    [ObservableProperty]
+    private bool isWorkingCopyReady;
+
     public DateTime OpenedAt { get; }
 
     public string FileName => Path.GetFileName(OriginalPath);
+
+    internal SemaphoreSlim WorkingCopyGate { get; } = new(1, 1);
 }

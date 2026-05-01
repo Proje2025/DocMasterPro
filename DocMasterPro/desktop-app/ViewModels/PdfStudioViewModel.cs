@@ -17,13 +17,18 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
     private readonly PdfTextSearchService _searchService;
     private readonly PdfAnnotationService _annotationService;
     private readonly SemaphoreSlim _renderGate = new(2, 2);
+    private PdfViewerService.PdfViewerSession? _viewerSession;
+    private CancellationTokenSource? _sessionCts;
     private CancellationTokenSource? _renderCts;
+    private bool _isOpeningInitialPage;
     private int _renderGeneration;
 
     private const double ScreenDpi = 96d;
     private const double PdfPointDpi = 72d;
     private const int RenderNeighborRadius = 2;
     private const int CacheRadius = 7;
+    private const int MediumZoomCacheRadius = 5;
+    private const int HighZoomCacheRadius = 3;
 
     public PdfStudioViewModel()
         : this(new PdfSessionService(), new PdfViewerService(), new PdfTextSearchService(), new PdfAnnotationService())
@@ -125,7 +130,7 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         UpdatePageMetrics();
         ClearRenderedPages("Yakınlaştırma değişti");
         NotifyCommandStates();
-        _ = EnsurePageWindowRenderedAsync(CurrentPageIndex);
+        QueuePageWindowRender(CurrentPageIndex);
     }
 
     partial void OnSelectedSearchResultChanged(PdfSearchResult? value)
@@ -179,33 +184,50 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
             return false;
 
         IsBusy = true;
-        StatusMessage = "PDF güvenli çalışma oturumu olarak açılıyor...";
+        StatusMessage = "PDF aciliyor...";
 
         try
         {
             string sourcePath = Path.GetFullPath(path);
             var previousSession = Session;
-            var newSession = await _sessionService.OpenPdfSessionAsync(sourcePath);
+            var viewerSession = _viewerService.OpenSession(sourcePath);
+            var newSession = await _sessionService.OpenPdfSessionAsync(sourcePath, viewerSession.PageCount);
 
-            ResetRenderWork();
+            var sessionToken = ResetSessionWork();
+            DisposeViewerSession();
+            _viewerSession = viewerSession;
             Session = newSession;
             Pages.Clear();
             Annotations.Clear();
             SearchResults.Clear();
             SelectedAnnotation = null;
             SelectedSearchResult = null;
-            BuildPageList(newSession.WorkingPath);
+            BuildPageList(viewerSession);
             CurrentPageIndex = 0;
             _sessionService.CleanupSession(previousSession);
 
-            StatusMessage = $"{newSession.PageCount} sayfa bulundu. Görünür sayfalar arka planda hazırlanıyor.";
-            await EnsurePageWindowRenderedAsync(0);
-            StatusMessage = "PDF açıldı. Kaynak dosya çalışma kopyası üzerinden korunuyor.";
+            StatusMessage = $"{newSession.PageCount} sayfa bulundu. Ilk sayfa hazirlaniyor.";
+            _isOpeningInitialPage = true;
+            try
+            {
+                await EnsureInitialPageRenderedAsync(sessionToken);
+            }
+            finally
+            {
+                _isOpeningInitialPage = false;
+            }
+
+            StartWorkingCopyPreparation(newSession, sessionToken);
+            QueuePageWindowRender(0);
+            StatusMessage = "PDF acildi. Yakin sayfalar arka planda hazirlaniyor.";
             return true;
         }
         catch (Exception ex)
         {
             StatusMessage = "PDF açılamadı";
+            if (_viewerSession == null && Session != null)
+                TryReopenViewerSession(Session.IsWorkingCopyReady ? Session.WorkingPath : Session.OriginalPath);
+
             MessageBox.Show(ex.Message, "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
@@ -475,15 +497,58 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         if (Session == null || Pages.Count == 0)
             return;
 
-        int start = Math.Max(0, centerPageIndex - RenderNeighborRadius);
-        int end = Math.Min(Pages.Count - 1, centerPageIndex + RenderNeighborRadius);
-        var token = _renderCts?.Token ?? CancellationToken.None;
+        var token = ResetRenderWork();
         int generation = _renderGeneration;
 
-        for (int index = start; index <= end; index++)
+        await RenderPageWindowAsync(centerPageIndex, generation, token);
+    }
+
+    public void QueuePageWindowRender(int centerPageIndex)
+    {
+        if (_isOpeningInitialPage || Session == null || Pages.Count == 0)
+            return;
+
+        var token = ResetRenderWork();
+        int generation = _renderGeneration;
+        _ = RenderPageWindowAsync(centerPageIndex, generation, token);
+    }
+
+    private async Task EnsureInitialPageRenderedAsync(CancellationToken sessionToken)
+    {
+        if (Pages.Count == 0)
+            return;
+
+        var token = _renderCts?.Token ?? sessionToken;
+        int generation = _renderGeneration;
+        await EnsurePageRenderedAsync(Pages[0], generation, token);
+    }
+
+    private async Task RenderPageWindowAsync(int centerPageIndex, int generation, CancellationToken token)
+    {
+        int target = Math.Clamp(centerPageIndex, 0, Pages.Count - 1);
+
+        foreach (int index in GetRenderOrder(target))
             await EnsurePageRenderedAsync(Pages[index], generation, token);
 
-        TrimRenderedPages(centerPageIndex);
+        TrimRenderedPages(target);
+    }
+
+    private IEnumerable<int> GetRenderOrder(int centerPageIndex)
+    {
+        yield return centerPageIndex;
+
+        int radius = CurrentRenderNeighborRadius;
+        for (int offset = 1; offset <= radius; offset++)
+        {
+            int previous = centerPageIndex - offset;
+            int next = centerPageIndex + offset;
+
+            if (previous >= 0)
+                yield return previous;
+
+            if (next < Pages.Count)
+                yield return next;
+        }
     }
 
     private async Task SaveToAsync(string outputPath)
@@ -497,7 +562,18 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         try
         {
             string outputPdf = await BuildOutputPdfAsync();
+            bool savingToOriginal = IsSamePath(outputPath, Session.OriginalPath);
+            if (savingToOriginal)
+            {
+                ResetRenderWork();
+                DisposeViewerSession();
+            }
+
             await _sessionService.AtomicSaveAsync(outputPdf, outputPath);
+
+            if (savingToOriginal)
+                TryReopenViewerSession(Session.WorkingPath);
+
             Session.OutputPath = outputPath;
             Session.IsDirty = false;
             OnPropertyChanged(nameof(DirtyLabel));
@@ -506,6 +582,9 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             StatusMessage = "Kaydetme başarısız";
+            if (_viewerSession == null && Session != null)
+                TryReopenViewerSession(Session.IsWorkingCopyReady ? Session.WorkingPath : Session.OriginalPath);
+
             MessageBox.Show(ex.Message, "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -520,23 +599,36 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         if (Session == null)
             throw new InvalidOperationException("Açık PDF oturumu yok.");
 
+        string workingPath = await EnsureWorkingCopyReadyAsync();
+
         if (Annotations.Count == 0)
-            return Session.WorkingPath;
+            return workingPath;
 
         string output = Path.Combine(Session.SessionFolder, $"studio-output-{Guid.NewGuid():N}.pdf");
-        await _annotationService.ApplyAnnotationsAsync(Session.WorkingPath, output, Annotations);
+        await _annotationService.ApplyAnnotationsAsync(workingPath, output, Annotations);
         return output;
     }
 
-    private void BuildPageList(string pdfPath)
+    private async Task<string> EnsureWorkingCopyReadyAsync(CancellationToken cancellationToken = default)
     {
-        var sizes = _viewerService.GetPageSizes(pdfPath);
+        if (Session == null)
+            throw new InvalidOperationException("Acik PDF oturumu yok.");
+
+        return await _sessionService.EnsureWorkingCopyAsync(Session, cancellationToken);
+    }
+
+    private void BuildPageList(PdfViewerService.PdfViewerSession viewerSession)
+    {
         Pages.Clear();
 
-        for (int index = 0; index < sizes.Count; index++)
+        int pageCount = viewerSession.PageCount;
+        var defaultSize = pageCount > 0
+            ? viewerSession.GetPageSize(0)
+            : new System.Drawing.SizeF(595, 842);
+
+        for (int index = 0; index < pageCount; index++)
         {
-            var size = sizes[index];
-            var page = new PdfPageViewItem(index, size.Width, size.Height);
+            var page = new PdfPageViewItem(index, defaultSize.Width, defaultSize.Height);
             ApplyPageMetric(page);
             Pages.Add(page);
         }
@@ -559,10 +651,12 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
             page.IsRendering = true;
             page.RenderStatus = "Sayfa hazırlanıyor...";
 
-            var rendered = await _viewerService.RenderPageAsync(Session!.WorkingPath, page.PageIndex, ZoomPercent, token);
+            var viewerSession = _viewerSession ?? throw new InvalidOperationException("PDF render oturumu yok.");
+            var rendered = await viewerSession.RenderPageAsync(page.PageIndex, ZoomPercent, token);
             if (token.IsCancellationRequested || generation != _renderGeneration)
                 return;
 
+            page.UpdateSourceSize(rendered.SourceWidth, rendered.SourceHeight);
             page.Image = rendered.Image;
             page.ViewWidth = rendered.Width;
             page.ViewHeight = rendered.Height;
@@ -618,9 +712,11 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
 
     private void TrimRenderedPages(int centerPageIndex)
     {
+        int cacheRadius = CurrentCacheRadius;
+
         foreach (var page in Pages)
         {
-            if (Math.Abs(page.PageIndex - centerPageIndex) <= CacheRadius)
+            if (Math.Abs(page.PageIndex - centerPageIndex) <= cacheRadius)
                 continue;
 
             if (page.Image == null || page.IsRendering)
@@ -640,6 +736,70 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         return _renderCts.Token;
     }
 
+    private CancellationToken ResetSessionWork()
+    {
+        _sessionCts?.Cancel();
+        _sessionCts?.Dispose();
+        _sessionCts = new CancellationTokenSource();
+        ResetRenderWork();
+        return _sessionCts.Token;
+    }
+
+    private void StartWorkingCopyPreparation(PdfDocumentSession session, CancellationToken token)
+    {
+        _ = PrepareWorkingCopyAsync(session, token);
+    }
+
+    private async Task PrepareWorkingCopyAsync(PdfDocumentSession session, CancellationToken token)
+    {
+        try
+        {
+            await _sessionService.EnsureWorkingCopyAsync(session, token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(Session, session))
+                StatusMessage = "Calisma kopyasi daha sonra hazirlanacak.";
+
+            FileLogger.LogError("PdfStudioWorkingCopy", ex);
+        }
+    }
+
+    private void DisposeViewerSession()
+    {
+        _viewerSession?.Dispose();
+        _viewerSession = null;
+    }
+
+    private void ReopenViewerSession(string pdfPath)
+    {
+        DisposeViewerSession();
+        _viewerSession = _viewerService.OpenSession(pdfPath);
+    }
+
+    private void TryReopenViewerSession(string pdfPath)
+    {
+        try
+        {
+            ReopenViewerSession(pdfPath);
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogError("PdfStudioReopenViewer", ex);
+        }
+    }
+
+    private static bool IsSamePath(string first, string second)
+    {
+        return string.Equals(
+            Path.GetFullPath(first),
+            Path.GetFullPath(second),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     private void GoToPage(int pageIndex, bool requestScroll)
     {
         if (Session == null || Pages.Count == 0)
@@ -648,7 +808,7 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
         int target = Math.Clamp(pageIndex, 0, Pages.Count - 1);
         CurrentPageIndex = target;
         JumpToPageText = (target + 1).ToString(CultureInfo.InvariantCulture);
-        _ = EnsurePageWindowRenderedAsync(target);
+        QueuePageWindowRender(target);
 
         if (requestScroll)
             ScrollToPageRequested?.Invoke(this, target);
@@ -749,6 +909,14 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
 
     private double CurrentScale => Math.Max(0.25, ZoomPercent / 100d) * ScreenDpi / PdfPointDpi;
 
+    private int CurrentRenderNeighborRadius => ZoomPercent >= 200 ? 1 : RenderNeighborRadius;
+
+    private int CurrentCacheRadius => ZoomPercent >= 200
+        ? HighZoomCacheRadius
+        : ZoomPercent >= 150
+            ? MediumZoomCacheRadius
+            : CacheRadius;
+
     private bool HasOpenSession() => Session != null && !IsBusy;
 
     private bool CanSave() => HasOpenSession();
@@ -783,7 +951,10 @@ public partial class PdfStudioViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _sessionCts?.Cancel();
         _renderCts?.Cancel();
+        DisposeViewerSession();
+        _sessionCts?.Dispose();
         _renderCts?.Dispose();
         _renderGate.Dispose();
         _sessionService.CleanupSession(Session);

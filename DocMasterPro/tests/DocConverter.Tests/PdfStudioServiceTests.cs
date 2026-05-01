@@ -19,7 +19,7 @@ public class PdfStudioServiceTests
     }
 
     [Fact]
-    public async Task OpenPdfSessionAsync_CreatesWorkingCopyWithoutChangingSource()
+    public async Task OpenPdfSessionAsync_DelaysWorkingCopyUntilRequested()
     {
         string tempDir = CreateTempDir();
         try
@@ -32,9 +32,16 @@ public class PdfStudioServiceTests
             var session = await service.OpenPdfSessionAsync(source);
 
             session.OriginalPath.Should().Be(source);
-            session.WorkingPath.Should().NotBe(source);
-            File.Exists(session.WorkingPath).Should().BeTrue();
+            session.WorkingPath.Should().Be(source);
+            session.IsWorkingCopyReady.Should().BeFalse();
             session.PageCount.Should().Be(1);
+            (await File.ReadAllBytesAsync(source)).Should().Equal(originalBytes);
+
+            string workingPath = await service.EnsureWorkingCopyAsync(session);
+            workingPath.Should().NotBe(source);
+            session.WorkingPath.Should().Be(workingPath);
+            session.IsWorkingCopyReady.Should().BeTrue();
+            File.Exists(workingPath).Should().BeTrue();
             (await File.ReadAllBytesAsync(source)).Should().Equal(originalBytes);
 
             service.CleanupSession(session);
@@ -116,13 +123,39 @@ public class PdfStudioServiceTests
     }
 
     [Fact]
+    public async Task OpenSession_ReusesLoadedPdfForPageSizesAndRender()
+    {
+        string tempDir = CreateTempDir();
+        try
+        {
+            string source = Path.Combine(tempDir, "session-render.pdf");
+            CreateTextPdf(source, "Session render", pageCount: 3);
+
+            var service = new PdfViewerService();
+            using var session = service.OpenSession(source);
+
+            session.PageCount.Should().Be(3);
+            session.GetPageSize(0).Width.Should().BeGreaterThan(0);
+
+            var rendered = await session.RenderPageAsync(1, 100);
+            rendered.Image.Should().NotBeNull();
+            rendered.SourceWidth.Should().BeGreaterThan(0);
+            rendered.SourceHeight.Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            DeleteTempDir(tempDir);
+        }
+    }
+
+    [Fact]
     public async Task PdfStudioViewModel_OpenLargePdf_RendersOnlyNearbyPages()
     {
         string tempDir = CreateTempDir();
         try
         {
             string source = Path.Combine(tempDir, "large.pdf");
-            CreateTextPdf(source, "Large document", pageCount: 50);
+            CreateTextPdf(source, "Large document", pageCount: 408);
 
             using var viewModel = new PdfStudioViewModel(
                 new PdfSessionService(Path.Combine(tempDir, "sessions")),
@@ -132,7 +165,7 @@ public class PdfStudioServiceTests
 
             bool opened = await viewModel.OpenPdfPathAsync(source);
             opened.Should().BeTrue();
-            viewModel.Pages.Should().HaveCount(50);
+            viewModel.Pages.Should().HaveCount(408);
             viewModel.Pages.Count(page => page.Image != null).Should().BeLessThanOrEqualTo(5);
 
             viewModel.SetCurrentPageFromView(25);
@@ -141,6 +174,44 @@ public class PdfStudioServiceTests
             viewModel.CurrentPageIndex.Should().Be(25);
             viewModel.Pages.Count(page => page.Image != null).Should().BeLessThanOrEqualTo(8);
             viewModel.Pages[25].Image.Should().NotBeNull();
+        }
+        finally
+        {
+            DeleteTempDir(tempDir);
+        }
+    }
+
+    [Fact]
+    public async Task PdfStudioViewModel_SavePreparesWorkingCopyAndDoesNotDoubleApplyAnnotations()
+    {
+        string tempDir = CreateTempDir();
+        try
+        {
+            string source = Path.Combine(tempDir, "annotated.pdf");
+            const string overlayText = "UniqueOverlayText";
+            CreateTextPdf(source, "Base page");
+
+            using var viewModel = new PdfStudioViewModel(
+                new PdfSessionService(Path.Combine(tempDir, "sessions")),
+                new PdfViewerService(),
+                new PdfTextSearchService(),
+                new PdfAnnotationService());
+
+            bool opened = await viewModel.OpenPdfPathAsync(source);
+            opened.Should().BeTrue();
+
+            viewModel.SelectedTool = PdfStudioTool.Text;
+            viewModel.AnnotationText = overlayText;
+            viewModel.AddAnnotationAt(0, 96, 96);
+
+            await viewModel.SaveCommand.ExecuteAsync(null);
+            viewModel.Session!.IsWorkingCopyReady.Should().BeTrue();
+
+            await viewModel.SaveCommand.ExecuteAsync(null);
+
+            var search = new PdfTextSearchService();
+            var results = await search.SearchAsync(source, overlayText);
+            results.Should().ContainSingle();
         }
         finally
         {
