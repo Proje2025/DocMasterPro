@@ -153,6 +153,7 @@
                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
                    ScrollViewer.CanContentScroll="True"
                    VirtualizingPanel.IsVirtualizing="True"
+                   VirtualizingPanel.ScrollUnit="Pixel"
                    VirtualizingPanel.VirtualizationMode="Recycling"
                    VirtualizingPanel.CacheLength="2"
                    ScrollViewer.ScrollChanged="DocumentPagesList_ScrollChanged">
@@ -275,40 +276,44 @@
       </Grid>
 
       <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#DFE5EE" BorderThickness="1,0,0,0" Padding="14">
-        <StackPanel>
-          <TextBlock Text="Araçlar" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
-          <Button Content="Seç" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Select"/>
-          <Button Content="Metin" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Text"/>
-          <Button Content="Vurgula" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Highlight"/>
-          <Button Content="Not" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Note"/>
-          <Button Content="Kutu" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Rectangle"/>
-          <Button Content="Silgi" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Eraser"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      CanContentScroll="False">
+          <StackPanel>
+            <TextBlock Text="Araçlar" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+            <Button Content="Seç" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Select"/>
+            <Button Content="Metin" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Text"/>
+            <Button Content="Vurgula" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Highlight"/>
+            <Button Content="Not" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Note"/>
+            <Button Content="Kutu" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Rectangle"/>
+            <Button Content="Silgi" Style="{StaticResource ToolButton}" Command="{Binding SelectToolCommand}" CommandParameter="Eraser"/>
 
-          <Separator Margin="0,14"/>
-          <TextBlock Text="Özellikler" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
-          <TextBlock Text="Metin" Foreground="#637083"/>
-          <TextBox Text="{Binding AnnotationText, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
-          <TextBlock Text="Renk" Foreground="#637083"/>
-          <TextBox Text="{Binding AnnotationColor, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
-          <TextBlock Text="Yazı boyutu" Foreground="#637083"/>
-          <TextBox Text="{Binding AnnotationFontSize, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
-          <Button Content="Uygula" Style="{StaticResource PrimaryStudioButton}" HorizontalAlignment="Stretch" Command="{Binding ApplyAnnotationPropertiesCommand}"/>
-          <Button Content="Seçileni Sil" Style="{StaticResource StudioButton}" HorizontalAlignment="Stretch" Command="{Binding DeleteSelectedAnnotationCommand}"/>
+            <Separator Margin="0,14"/>
+            <TextBlock Text="Özellikler" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+            <TextBlock Text="Metin" Foreground="#637083"/>
+            <TextBox Text="{Binding AnnotationText, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
+            <TextBlock Text="Renk" Foreground="#637083"/>
+            <TextBox Text="{Binding AnnotationColor, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
+            <TextBlock Text="Yazı boyutu" Foreground="#637083"/>
+            <TextBox Text="{Binding AnnotationFontSize, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" MinHeight="30"/>
+            <Button Content="Uygula" Style="{StaticResource PrimaryStudioButton}" HorizontalAlignment="Stretch" Command="{Binding ApplyAnnotationPropertiesCommand}"/>
+            <Button Content="Seçileni Sil" Style="{StaticResource StudioButton}" HorizontalAlignment="Stretch" Command="{Binding DeleteSelectedAnnotationCommand}"/>
 
-          <Separator Margin="0,14"/>
-          <TextBlock Text="Arama Sonuçları" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
-          <ListBox ItemsSource="{Binding SearchResults}"
-                   SelectedItem="{Binding SelectedSearchResult}"
-                   MinHeight="120"
-                   BorderBrush="#D7DEE8"
-                   BorderThickness="1">
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" Margin="4"/>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </StackPanel>
+            <Separator Margin="0,14"/>
+            <TextBlock Text="Arama Sonuçları" FontSize="16" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
+            <ListBox ItemsSource="{Binding SearchResults}"
+                     SelectedItem="{Binding SelectedSearchResult}"
+                     MinHeight="120"
+                     BorderBrush="#D7DEE8"
+                     BorderThickness="1">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" Margin="4"/>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </StackPanel>
+        </ScrollViewer>
       </Border>
     </Grid>
 

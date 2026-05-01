@@ -25,6 +25,7 @@ namespace DocConverter
         {
             // PDFsharp için font resolver ayarla
             GlobalFontSettings.FontResolver = new WindowsFontResolver();
+            WindowsFileAssociationService.RegisterPdfOpenWithForCurrentUser();
 
             base.OnStartup(e);
 

@@ -54,6 +54,7 @@ function Register-PdfAssociation {
     $defaultIconPath = Join-Path $progIdPath 'DefaultIcon'
     $commandPath = Join-Path $progIdPath 'shell\open\command'
     $openWithProgIdsPath = Join-Path $classesRoot '.pdf\OpenWithProgids'
+    $openWithListPath = Join-Path $classesRoot '.pdf\OpenWithList\DocConverter.exe'
     $applicationPath = Join-Path $classesRoot 'Applications\DocConverter.exe'
     $applicationCommandPath = Join-Path $applicationPath 'shell\open\command'
     $applicationSupportedTypesPath = Join-Path $applicationPath 'SupportedTypes'
@@ -71,8 +72,10 @@ function Register-PdfAssociation {
 
     New-Item -Path $openWithProgIdsPath -Force | Out-Null
     New-ItemProperty -Path $openWithProgIdsPath -Name $progId -Value ([byte[]]@()) -PropertyType Binary -Force | Out-Null
+    New-Item -Path $openWithListPath -Force | Out-Null
 
     New-Item -Path $applicationPath -Force | Out-Null
+    New-ItemProperty -Path $applicationPath -Name FriendlyAppName -Value $appName -PropertyType String -Force | Out-Null
     New-Item -Path $applicationCommandPath -Force | Out-Null
     Set-Item -Path $applicationCommandPath -Value $openCommand
     New-Item -Path $applicationSupportedTypesPath -Force | Out-Null
@@ -157,6 +160,7 @@ Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath('CommonDesktop
 Remove-Item -LiteralPath (Join-Path `$env:ProgramData 'Microsoft\Windows\Start Menu\Programs\DocMaster Pro') -Recurse -Force
 Remove-Item -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DocMasterPro' -Recurse -Force
 Remove-ItemProperty -LiteralPath 'HKLM:\Software\Classes\.pdf\OpenWithProgids' -Name `$progId -Force
+Remove-Item -LiteralPath 'HKLM:\Software\Classes\.pdf\OpenWithList\DocConverter.exe' -Recurse -Force
 Remove-ItemProperty -LiteralPath 'HKLM:\Software\RegisteredApplications' -Name `$registeredApplicationName -Force
 Remove-Item -LiteralPath 'HKLM:\Software\Classes\DocMasterPro.PDF' -Recurse -Force
 Remove-Item -LiteralPath 'HKLM:\Software\Classes\Applications\DocConverter.exe' -Recurse -Force

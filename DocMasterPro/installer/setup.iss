@@ -29,6 +29,8 @@ Root: HKLM; Subkey: "Software\Classes\DocMasterPro.PDF"; ValueType: string; Valu
 Root: HKLM; Subkey: "Software\Classes\DocMasterPro.PDF\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\DocConverter.exe,0"
 Root: HKLM; Subkey: "Software\Classes\DocMasterPro.PDF\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\DocConverter.exe"" ""%1"""
 Root: HKLM; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: none; ValueName: "DocMasterPro.PDF"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "Software\Classes\.pdf\OpenWithList\DocConverter.exe"; ValueType: none; ValueName: ""; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\Applications\DocConverter.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "DocMaster Pro"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\Applications\DocConverter.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\DocConverter.exe"" ""%1"""; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\Applications\DocConverter.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""
 Root: HKLM; Subkey: "Software\DocMasterPro\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "DocMaster Pro"; Flags: uninsdeletekey
