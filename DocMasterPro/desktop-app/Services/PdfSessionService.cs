@@ -18,7 +18,10 @@ public class PdfSessionService
         _sessionRoot = sessionRoot;
     }
 
-    public async Task<PdfDocumentSession> OpenPdfSessionAsync(string sourcePath, CancellationToken cancellationToken = default)
+    public Task<PdfDocumentSession> OpenPdfSessionAsync(
+        string sourcePath,
+        int? knownPageCount = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
             throw new ArgumentException("PDF dosya yolu boş olamaz.", nameof(sourcePath));
@@ -29,21 +32,70 @@ public class PdfSessionService
         if (!string.Equals(Path.GetExtension(sourcePath), ".pdf", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Sadece PDF dosyaları açılabilir.");
 
-        int pageCount = GetPageCount(sourcePath);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        int pageCount = knownPageCount ?? GetPageCount(sourcePath);
         if (pageCount <= 0)
             throw new InvalidOperationException("PDF açılamadı veya sayfa bulunamadı. Dosya bozuk, şifreli veya erişim kısıtlı olabilir.");
 
         string sessionFolder = Path.Combine(_sessionRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(sessionFolder);
 
-        string workingPath = Path.Combine(sessionFolder, Path.GetFileName(sourcePath));
-        await using (var input = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-        await using (var output = File.Create(workingPath))
-        {
-            await input.CopyToAsync(output, cancellationToken);
-        }
+        var session = new PdfDocumentSession(sourcePath, sourcePath, sessionFolder, pageCount, DateTime.Now);
+        return Task.FromResult(session);
+    }
 
-        return new PdfDocumentSession(sourcePath, workingPath, sessionFolder, pageCount, DateTime.Now);
+    public async Task<string> EnsureWorkingCopyAsync(PdfDocumentSession session, CancellationToken cancellationToken = default)
+    {
+        if (session == null)
+            throw new ArgumentNullException(nameof(session));
+
+        if (session.IsWorkingCopyReady && File.Exists(session.WorkingPath))
+            return session.WorkingPath;
+
+        await session.WorkingCopyGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (session.IsWorkingCopyReady && File.Exists(session.WorkingPath))
+                return session.WorkingPath;
+
+            Directory.CreateDirectory(session.SessionFolder);
+
+            string workingPath = Path.Combine(session.SessionFolder, Path.GetFileName(session.OriginalPath));
+            string tempPath = Path.Combine(session.SessionFolder, $"{Path.GetFileNameWithoutExtension(session.OriginalPath)}.{Guid.NewGuid():N}.tmp.pdf");
+
+            try
+            {
+                await using (var input = File.Open(session.OriginalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                await using (var output = File.Create(tempPath))
+                {
+                    await input.CopyToAsync(output, cancellationToken);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
+                    throw new IOException("GeÃ§ici PDF Ã§alÄ±ÅŸma kopyasÄ± doÄŸrulanamadÄ±.");
+
+                if (File.Exists(workingPath))
+                    File.Delete(workingPath);
+
+                File.Move(tempPath, workingPath);
+                session.WorkingPath = workingPath;
+                session.IsWorkingCopyReady = true;
+
+                return workingPath;
+            }
+            catch
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                throw;
+            }
+        }
+        finally
+        {
+            session.WorkingCopyGate.Release();
+        }
     }
 
     public async Task AtomicSaveAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)

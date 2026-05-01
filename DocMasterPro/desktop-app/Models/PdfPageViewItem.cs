@@ -18,9 +18,9 @@ public partial class PdfPageViewItem : ObservableObject
 
     public int PageNumber { get; }
 
-    public double SourceWidth { get; }
+    public double SourceWidth { get; private set; }
 
-    public double SourceHeight { get; }
+    public double SourceHeight { get; private set; }
 
     [ObservableProperty]
     private double viewWidth;
@@ -45,4 +45,13 @@ public partial class PdfPageViewItem : ObservableObject
     public ObservableCollection<PdfSearchResult> SearchResults { get; } = new();
 
     public string PageLabel => $"Sayfa {PageNumber}";
+
+    public void UpdateSourceSize(double sourceWidth, double sourceHeight)
+    {
+        if (sourceWidth <= 0 || sourceHeight <= 0)
+            return;
+
+        SourceWidth = sourceWidth;
+        SourceHeight = sourceHeight;
+    }
 }

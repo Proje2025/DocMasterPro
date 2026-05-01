@@ -1,5 +1,5 @@
-using System.IO;
 using System.Drawing;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,64 +22,38 @@ public class PdfViewerService
     private static readonly object NativeLoadLock = new();
     private static IntPtr pdfiumHandle;
 
-    public Task<PdfRenderedPage> RenderPageAsync(
+    public async Task<PdfRenderedPage> RenderPageAsync(
         string pdfPath,
         int pageIndex,
         double zoomPercent,
         CancellationToken cancellationToken = default)
     {
-        return Task.Run(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            EnsurePdfiumLoaded();
+        using var session = OpenSession(pdfPath);
+        return await session.RenderPageAsync(pageIndex, zoomPercent, cancellationToken);
+    }
 
-            using var document = PdfDocument.Load(pdfPath);
-            if (pageIndex < 0 || pageIndex >= document.PageCount)
-                throw new ArgumentOutOfRangeException(nameof(pageIndex), "Sayfa indeksi geçersiz.");
-
-            SizeF size = GetPageSize(document, pageIndex);
-            double scale = Math.Max(0.25, zoomPercent / 100d) * ScreenDpi / PdfPointDpi;
-            int width = Math.Max(1, (int)Math.Round(size.Width * scale));
-            int height = Math.Max(1, (int)Math.Round(size.Height * scale));
-
-            using var image = document.Render(
-                pageIndex,
-                width,
-                height,
-                (float)ScreenDpi,
-                (float)ScreenDpi,
-                PdfRenderFlags.Annotations);
-
-            BitmapSource source = ConvertToBitmapSource(image);
-            source.Freeze();
-            return new PdfRenderedPage(source, width, height);
-        }, cancellationToken);
+    public PdfViewerSession OpenSession(string pdfPath)
+    {
+        EnsurePdfiumLoaded();
+        return new PdfViewerSession(PdfDocument.Load(pdfPath));
     }
 
     public int GetPageCount(string pdfPath)
     {
-        EnsurePdfiumLoaded();
-        using var document = PdfDocument.Load(pdfPath);
-        return document.PageCount;
+        using var session = OpenSession(pdfPath);
+        return session.PageCount;
     }
 
     public SizeF GetPageSize(string pdfPath, int pageIndex)
     {
-        EnsurePdfiumLoaded();
-        using var document = PdfDocument.Load(pdfPath);
-        return GetPageSize(document, pageIndex);
+        using var session = OpenSession(pdfPath);
+        return session.GetPageSize(pageIndex);
     }
 
     public IReadOnlyList<SizeF> GetPageSizes(string pdfPath)
     {
-        EnsurePdfiumLoaded();
-        using var document = PdfDocument.Load(pdfPath);
-        var sizes = new List<SizeF>(document.PageCount);
-
-        for (int pageIndex = 0; pageIndex < document.PageCount; pageIndex++)
-            sizes.Add(GetPageSize(document, pageIndex));
-
-        return sizes;
+        using var session = OpenSession(pdfPath);
+        return session.GetPageSizes();
     }
 
     public void Print(string pdfPath)
@@ -137,6 +111,108 @@ public class PdfViewerService
         dialog.PrintDocument(fixedDocument.DocumentPaginator, "DocMaster Pro PDF Studio");
     }
 
+    public sealed class PdfViewerSession : IDisposable
+    {
+        private readonly PdfDocument _document;
+        private readonly object _syncRoot = new();
+        private bool _disposed;
+
+        internal PdfViewerSession(PdfDocument document)
+        {
+            _document = document;
+        }
+
+        public int PageCount
+        {
+            get
+            {
+                lock (_syncRoot)
+                {
+                    ThrowIfDisposed();
+                    return _document.PageCount;
+                }
+            }
+        }
+
+        public SizeF GetPageSize(int pageIndex)
+        {
+            lock (_syncRoot)
+            {
+                ThrowIfDisposed();
+                return PdfViewerService.GetPageSize(_document, pageIndex);
+            }
+        }
+
+        public IReadOnlyList<SizeF> GetPageSizes()
+        {
+            lock (_syncRoot)
+            {
+                ThrowIfDisposed();
+                var sizes = new List<SizeF>(_document.PageCount);
+
+                for (int pageIndex = 0; pageIndex < _document.PageCount; pageIndex++)
+                    sizes.Add(PdfViewerService.GetPageSize(_document, pageIndex));
+
+                return sizes;
+            }
+        }
+
+        public Task<PdfRenderedPage> RenderPageAsync(
+            int pageIndex,
+            double zoomPercent,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                lock (_syncRoot)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    ThrowIfDisposed();
+
+                    if (pageIndex < 0 || pageIndex >= _document.PageCount)
+                        throw new ArgumentOutOfRangeException(nameof(pageIndex), "Sayfa indeksi gecersiz.");
+
+                    SizeF size = PdfViewerService.GetPageSize(_document, pageIndex);
+                    double scale = Math.Max(0.25, zoomPercent / 100d) * ScreenDpi / PdfPointDpi;
+                    int width = Math.Max(1, (int)Math.Round(size.Width * scale));
+                    int height = Math.Max(1, (int)Math.Round(size.Height * scale));
+
+                    using var image = _document.Render(
+                        pageIndex,
+                        width,
+                        height,
+                        (float)ScreenDpi,
+                        (float)ScreenDpi,
+                        PdfRenderFlags.Annotations);
+
+                    BitmapSource source = ConvertToBitmapSource(image);
+                    source.Freeze();
+                    return new PdfRenderedPage(source, width, height, size.Width, size.Height);
+                }
+            }, cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            lock (_syncRoot)
+            {
+                if (_disposed)
+                    return;
+
+                _document.Dispose();
+                _disposed = true;
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(PdfViewerSession));
+        }
+    }
+
     private static BitmapSource ConvertToBitmapSource(Image image)
     {
         using var bitmap = new Bitmap(image);
@@ -177,7 +253,7 @@ public class PdfViewerService
             if (!File.Exists(nativePath))
             {
                 throw new DllNotFoundException(
-                    $"PDFium native runtime bulunamadı: {nativePath}. PdfiumViewer native paketlerinin çıktı klasörüne kopyalandığını doğrulayın.");
+                    $"PDFium native runtime bulunamadi: {nativePath}. PdfiumViewer native paketlerinin cikti klasorune kopyalandigini dogrulayin.");
             }
 
             pdfiumHandle = NativeLibrary.Load(nativePath);
@@ -187,7 +263,7 @@ public class PdfViewerService
     private static SizeF GetPageSize(PdfDocument document, int pageIndex)
     {
         if (pageIndex < 0 || pageIndex >= document.PageCount)
-            throw new ArgumentOutOfRangeException(nameof(pageIndex), "Sayfa indeksi geçersiz.");
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), "Sayfa indeksi gecersiz.");
 
         return document.PageSizes[pageIndex] is SizeF size
             ? size
