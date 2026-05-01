@@ -7,7 +7,7 @@ namespace DocConverter.Services;
 
 public sealed class UpdateService
 {
-    private const string RepositoryUrl = "https://github.com/aligundogan2025-arch/DocMasterPro";
+    private const string RepositoryUrl = "https://github.com/Proje2025/DocMasterPro";
 
     public async Task CheckForUpdatesAsync(bool notifyWhenCurrent, CancellationToken cancellationToken = default)
     {
