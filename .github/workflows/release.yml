@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   DOTNET_VERSION: '8.0.x'
   CONFIGURATION: Release
