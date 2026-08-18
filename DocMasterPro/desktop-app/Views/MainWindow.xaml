@@ -16,6 +16,9 @@
 
   <Window.Resources>
     <conv:StatusColorConverter x:Key="StatusColor"/>
+    <conv:SectionVisibilityConverter x:Key="SectionVisibilityConverter"/>
+    <conv:ActiveSectionBackgroundConverter x:Key="ActiveBgConverter"/>
+    <conv:ActiveSectionForegroundConverter x:Key="ActiveFgConverter"/>
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
     <!-- Ortak Buton Stili -->
@@ -144,16 +147,119 @@
     </DataTemplate>
   </Window.Resources>
 
-  <Grid Background="#101827">
-    <TabControl x:Name="MainTabs"
-                Margin="0"
-                Padding="0"
-                Background="#F3F6FA"
-                BorderThickness="0"
-                TabStripPlacement="Left">
-      <TabItem Header="PDF Studio" Style="{StaticResource TabHeaderStyle}">
-        <views:PdfStudioView DataContext="{Binding PdfStudio}"/>
-      </TabItem>
+  <Grid Background="#0B1120">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="52"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- Global Navigation Header Bar -->
+    <Border Grid.Row="0" Background="#0F172A" BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="16,0">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sol Logo -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <Border Background="#2563EB" CornerRadius="6" Width="28" Height="28" Margin="0,0,10,0">
+            <TextBlock Text="⚡" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <TextBlock Text="DocMaster" FontSize="16" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+          <TextBlock Text=" PRO" FontSize="14" FontWeight="SemiBold" Foreground="#38BDF8" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Orta Mod Seçim Butonları -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <!-- Giriş Sayfası Butonu -->
+          <Button Command="{Binding NavigateToHomeCommand}" Margin="4,0" Padding="14,6" Cursor="Hand" BorderThickness="0">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border CornerRadius="8" Padding="{TemplateBinding Padding}"
+                        Background="{Binding DataContext.SelectedAppSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ActiveBgConverter}, ConverterParameter=0}">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🏠" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="Giriş Sayfası" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{Binding DataContext.SelectedAppSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ActiveFgConverter}, ConverterParameter=0}"/>
+                  </StackPanel>
+                </Border>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+
+          <!-- Office ve Belge İşlemleri Butonu -->
+          <Button Command="{Binding NavigateToOfficeCommand}" Margin="4,0" Padding="14,6" Cursor="Hand" BorderThickness="0">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border CornerRadius="8" Padding="{TemplateBinding Padding}"
+                        Background="{Binding DataContext.SelectedAppSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ActiveBgConverter}, ConverterParameter=1}">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="📁" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="Office &amp; Belge İşlemleri" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{Binding DataContext.SelectedAppSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ActiveFgConverter}, ConverterParameter=1}"/>
+                  </StackPanel>
+                </Border>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+
+          <!-- Yazıcılar ve Tarayıcılar Butonu -->
+          <Button Command="{Binding NavigateToDevicesCommand}" Margin="4,0" Padding="14,6" Cursor="Hand" BorderThickness="0">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border CornerRadius="8" Padding="{TemplateBinding Padding}"
+                        Background="{Binding DataContext.SelectedAppSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ActiveBgConverter}, ConverterParameter=2}">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🖨️" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="Yazıcılar &amp; Tarayıcılar" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{Binding DataContext.SelectedAppSection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ActiveFgConverter}, ConverterParameter=2}"/>
+                    <Border Background="#16A34A" CornerRadius="4" Padding="5,1" Margin="6,0,0,0">
+                      <TextBlock Text="Ricoh/Fujitsu" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+        </StackPanel>
+
+        <!-- Sağ Taraf Bilgi ve Güncelleme -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Content="🔄 Güncelleme"
+                  Command="{Binding CheckForUpdatesCommand}"
+                  Background="#1E293B" Foreground="#94A3B8"
+                  FontSize="11" Padding="10,4" Margin="0" BorderThickness="0" Cursor="Hand">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Main Dynamic Content Grid -->
+    <Grid Grid.Row="1">
+      <!-- 0. Giriş Sayfası (Home Hub) -->
+      <views:HomeHubView DataContext="{Binding HomeHub}"
+                         Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=0}"/>
+
+      <!-- 1. Office ve Belge İşlemleri (TabControl) -->
+      <TabControl x:Name="MainTabs"
+                  Margin="0"
+                  Padding="0"
+                  Background="#F3F6FA"
+                  BorderThickness="0"
+                  TabStripPlacement="Left"
+                  Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=1}">
+        <TabItem Header="PDF Studio" Style="{StaticResource TabHeaderStyle}">
+          <views:PdfStudioView DataContext="{Binding PdfStudio}"/>
+        </TabItem>
 
       <!-- Tab 1: PDF Birleştirme -->
       <TabItem Header="📄 PDF Birleştir" Style="{StaticResource TabHeaderStyle}">
@@ -634,5 +740,10 @@
         </Grid>
       </TabItem>
     </TabControl>
+
+    <!-- 2. Yazıcılar ve Tarayıcılar (Device Hub) -->
+    <views:DeviceHubView DataContext="{Binding DeviceHub}"
+                         Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=2}"/>
+    </Grid>
   </Grid>
 </Window>

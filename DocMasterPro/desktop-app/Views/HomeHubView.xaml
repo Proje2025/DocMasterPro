@@ -1,0 +1,227 @@
+<UserControl x:Class="DocConverter.Views.HomeHubView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:vm="clr-namespace:DocConverter.ViewModels"
+             mc:Ignorable="d" 
+             d:DesignHeight="700" d:DesignWidth="1000">
+
+  <UserControl.Resources>
+    <!-- Hub Card Button Style -->
+    <Style x:Key="HubCardButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#E2E8F0"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="CardBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="16"
+                    Padding="28,24">
+              <Border.Effect>
+                <DropShadowEffect Color="#0F172A" Opacity="0.06" BlurRadius="20" ShadowDepth="4"/>
+              </Border.Effect>
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#3B82F6"/>
+                <Setter TargetName="CardBorder" Property="Background" Value="#F8FAFC"/>
+                <Setter Property="Effect">
+                  <Setter.Value>
+                    <DropShadowEffect Color="#2563EB" Opacity="0.16" BlurRadius="24" ShadowDepth="6"/>
+                  </Setter.Value>
+                </Setter>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="QuickActionButtonStyle" TargetType="Button">
+      <Setter Property="Background" Value="#F1F5F9"/>
+      <Setter Property="Foreground" Value="#1E293B"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Padding" Value="16,10"/>
+      <Setter Property="Margin" Value="0,0,10,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="BtnBorder"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="8"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="BtnBorder" Property="Background" Value="#E2E8F0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="32,24,32,32">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+
+      <!-- Üst Karşılama Başlığı -->
+      <StackPanel Grid.Row="0" Margin="0,0,0,24">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Border Background="#2563EB" CornerRadius="8" Width="36" Height="36" Margin="0,0,12,0">
+            <TextBlock Text="⚡" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <TextBlock Text="DocMaster Pro" FontSize="28" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
+          <Border Background="#E0E7FF" CornerRadius="6" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="ENTERPRISE HUB" FontSize="11" FontWeight="Bold" Foreground="#3730A3"/>
+          </Border>
+        </StackPanel>
+        <TextBlock Text="Lütfen yapmak istediğiniz çalışma alanını seçin veya hızlı eylemlerle anında başlayın."
+                   FontSize="15" Foreground="#64748B" Margin="0,6,0,0"/>
+      </StackPanel>
+
+      <!-- 2 Ana Seçenek Kartı -->
+      <Grid Grid.Row="1" Margin="0,0,0,28">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="20"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- KART 1: Office ve Belge İşlemleri -->
+        <Button Grid.Column="0"
+                Style="{StaticResource HubCardButtonStyle}"
+                Command="{Binding OpenOfficeSuiteCommand}">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#EFF6FF" CornerRadius="12" Width="60" Height="60" HorizontalAlignment="Left" Margin="0,0,0,16">
+              <TextBlock Text="📁" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+
+            <TextBlock Grid.Row="1" Text="Office ve Belge İşlemleri" FontSize="22" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,8"/>
+            <TextBlock Grid.Row="2" Text="PDF birleştirme, bölme, düzenleme, Word/Excel/PowerPoint ve görüntü dönüştürme stüdyosu."
+                       FontSize="14" Foreground="#64748B" TextWrapping="Wrap" LineHeight="20" Margin="0,0,0,16"/>
+
+            <!-- Özellik Maddeleri -->
+            <StackPanel Grid.Row="3" Margin="0,0,0,20">
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,8,0"/>
+                <TextBlock Text="PDF Studio ile canlı sayfa düzenleme ve önizleme" FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,8,0"/>
+                <TextBlock Text="Word, Excel, PPT, TXT ve Görüntü dosyalarından PDF oluşturma" FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,8,0"/>
+                <TextBlock Text="Sürükle-bırak toplu dosya işleme ve sayfa aralıklarıyla bölme" FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+            </StackPanel>
+
+            <Border Grid.Row="4" Background="#2563EB" CornerRadius="8" Padding="16,10" HorizontalAlignment="Left">
+              <TextBlock Text="Office Modülüne Git →" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+            </Border>
+          </Grid>
+        </Button>
+
+        <!-- KART 2: Yazıcılar ve Tarayıcılar -->
+        <Button Grid.Column="2"
+                Style="{StaticResource HubCardButtonStyle}"
+                Command="{Binding OpenDeviceHubCommand}">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#F0FDF4" CornerRadius="12" Width="60" Height="60" HorizontalAlignment="Left" Margin="0,0,0,16">
+              <TextBlock Text="🖨️" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+              <TextBlock Text="Yazıcılar ve Tarayıcılar" FontSize="22" FontWeight="Bold" Foreground="#1E293B"/>
+              <Border Background="#DCFCE7" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="OTOMATİK SÜRÜCÜ" FontSize="10" FontWeight="Bold" Foreground="#15803D"/>
+              </Border>
+            </StackPanel>
+
+            <TextBlock Grid.Row="2" Text="Bilgisayara bağlı ve ağdaki tüm aygıtları otomatik bulur, sürücüleri hazır hale getirir ve kullanıma sunar."
+                       FontSize="14" Foreground="#64748B" TextWrapping="Wrap" LineHeight="20" Margin="0,0,0,16"/>
+
+            <!-- Donanım Özel Maddeleri -->
+            <StackPanel Grid.Row="3" Margin="0,0,0,20">
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,8,0"/>
+                <TextBlock Text="Fujitsu fi-6230 / fi-6230Z ADF &amp; Cam çift taraflı yüksek hızlı tarama" FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,8,0"/>
+                <TextBlock Text="Ricoh SP 4510SF Ağ / USB doğrudan PCL6 yazdırma ve kuyruk yönetimi" FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,8,0"/>
+                <TextBlock Text="İlk seferde otomatik kurulum; sonraki açılışlarda anında kullanıma hazır" FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+            </StackPanel>
+
+            <Border Grid.Row="4" Background="#16A34A" CornerRadius="8" Padding="16,10" HorizontalAlignment="Left">
+              <TextBlock Text="Yazıcı ve Tarayıcı Merkezini Aç →" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+            </Border>
+          </Grid>
+        </Button>
+      </Grid>
+
+      <!-- Hızlı Eylemler Çubuğu -->
+      <Border Grid.Row="2" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20,16">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0">
+            <TextBlock Text="Hızlı Başlat" FontSize="15" FontWeight="Bold" Foreground="#1E293B"/>
+            <TextBlock Text="Tek tıkla doğrudan ilgili araca geçin" FontSize="12" Foreground="#64748B"/>
+          </StackPanel>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+            <Button Content="📑 Fujitsu ile Belge Tara" Style="{StaticResource QuickActionButtonStyle}"
+                    Command="{Binding OpenScannerStudioCommand}"/>
+            <Button Content="🖨️ Ricoh ile Hızlı Yazdır" Style="{StaticResource QuickActionButtonStyle}"
+                    Command="{Binding OpenPrinterStudioCommand}"/>
+            <Button Content="✂️ PDF Böl / Birleştir" Style="{StaticResource QuickActionButtonStyle}"
+                    Command="{Binding OpenOfficeSuiteCommand}"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+    </Grid>
+  </ScrollViewer>
+</UserControl>

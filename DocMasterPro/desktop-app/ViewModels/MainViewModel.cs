@@ -36,6 +36,12 @@ namespace DocConverter.ViewModels
         private const int PdfPreviewMaxWidth = 1200;
 
         public PdfStudioViewModel PdfStudio { get; } = new();
+        public HomeHubViewModel HomeHub { get; } = new();
+        public DeviceHubViewModel DeviceHub { get; } = new();
+
+        // ==================== Mod ve Bölüm Seçimi ====================
+        [ObservableProperty]
+        private int selectedAppSection = 0; // 0 = HomeHub, 1 = OfficeSuite, 2 = DeviceHub
 
         // ==================== Ortak Özellikler ====================
         [ObservableProperty]
@@ -70,6 +76,16 @@ namespace DocConverter.ViewModels
         // ==================== Tab 3: Görüntü → PDF ====================
         [ObservableProperty]
         private ObservableCollection<DocumentItem> imageDocuments = new();
+
+        // ==================== Navigation Commands ====================
+        [RelayCommand]
+        public void NavigateToHome() => SelectedAppSection = 0;
+
+        [RelayCommand]
+        public void NavigateToOffice() => SelectedAppSection = 1;
+
+        [RelayCommand]
+        public void NavigateToDevices() => SelectedAppSection = 2;
 
         // ==================== Tab 4: PDF → Görüntü ====================
         [ObservableProperty]
@@ -132,6 +148,17 @@ namespace DocConverter.ViewModels
         // ==================== Constructor ====================
         public MainViewModel()
         {
+            HomeHub.OnNavigateToOfficeRequested = () => SelectedAppSection = 1;
+            HomeHub.OnNavigateToDevicesRequested = () => SelectedAppSection = 2;
+            HomeHub.OnNavigateToScannerStudioRequested = () => { SelectedAppSection = 2; DeviceHub.SelectedHubTabIndex = 1; };
+            HomeHub.OnNavigateToPrinterStudioRequested = () => { SelectedAppSection = 2; DeviceHub.SelectedHubTabIndex = 2; };
+            DeviceHub.OnSendToPdfStudioRequested = async pdfPath =>
+            {
+                SelectedAppSection = 1;
+                SelectedWorkspaceIndex = 0;
+                await PdfStudio.OpenPdfPathAsync(pdfPath, promptForUnsavedChanges: false);
+            };
+
             MergeDocuments.CollectionChanged += (_, _) => MergeCommand.NotifyCanExecuteChanged();
             ImageDocuments.CollectionChanged += (_, _) => ConvertImagesToPdfCommand.NotifyCanExecuteChanged();
             OfficeDocuments.CollectionChanged += (_, _) => ConvertOfficeToPdfCommand.NotifyCanExecuteChanged();
