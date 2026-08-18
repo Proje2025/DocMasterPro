@@ -32,10 +32,10 @@ namespace DocConverter.Views
 
         public async Task OpenPdfInStudioAsync(string path, string? successStatusMessage = null)
         {
-            MainTabs.SelectedIndex = 0;
-
             if (DataContext is not MainViewModel vm)
                 return;
+
+            vm.SelectedAppSection = 3;
 
             if (!PathValidator.TryResolveExistingPdfPath(path, out string pdfPath))
             {

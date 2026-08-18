@@ -41,7 +41,7 @@ namespace DocConverter.ViewModels
 
         // ==================== Mod ve Bölüm Seçimi ====================
         [ObservableProperty]
-        private int selectedAppSection = 0; // 0 = HomeHub, 1 = OfficeSuite, 2 = DeviceHub
+        private int selectedAppSection = 0; // 0 = HomeHub, 1 = OfficeSuite, 2 = DeviceHub, 3 = PdfStudio
 
         // ==================== Ortak Özellikler ====================
         [ObservableProperty]
@@ -82,10 +82,17 @@ namespace DocConverter.ViewModels
         public void NavigateToHome() => SelectedAppSection = 0;
 
         [RelayCommand]
-        public void NavigateToOffice() => SelectedAppSection = 1;
+        public void NavigateToOffice()
+        {
+            SelectedAppSection = 1;
+            SelectedWorkspaceIndex = 0;
+        }
 
         [RelayCommand]
         public void NavigateToDevices() => SelectedAppSection = 2;
+
+        [RelayCommand]
+        public void NavigateToPdfStudio() => SelectedAppSection = 3;
 
         // ==================== Tab 4: PDF → Görüntü ====================
         [ObservableProperty]
@@ -133,14 +140,47 @@ namespace DocConverter.ViewModels
         }
 
         [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
-        public async Task CheckForUpdates()
+        public void CheckForUpdates()
         {
-            await _updateService.CheckForUpdatesAsync(notifyWhenCurrent: true);
+            var dialog = new DocConverter.Views.UpdateDialog();
+            if (Application.Current?.MainWindow != null && Application.Current.MainWindow.IsVisible)
+            {
+                dialog.Owner = Application.Current.MainWindow;
+            }
+            dialog.ShowDialog();
         }
 
         public async Task CheckForUpdatesOnStartupAsync()
         {
-            await _updateService.CheckForUpdatesAsync(notifyWhenCurrent: false);
+            try
+            {
+                var result = await _updateService.CheckForUpdatesAsync();
+                if (result.HasUpdate)
+                {
+                    var updateVm = new UpdateViewModel(_updateService)
+                    {
+                        State = UpdateState.UpdateAvailable,
+                        CurrentVersion = result.CurrentVersion,
+                        LatestVersion = result.LatestVersion,
+                        ReleaseTitle = result.ReleaseTitle,
+                        ReleaseNotes = result.ReleaseNotes,
+                        PublishedDateText = result.PublishedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "",
+                        StageTitle = "Yeni Bir Sürüm Mevcut!",
+                        StageDescription = $"DocMaster Pro v{result.LatestVersion} indirilebilir."
+                    };
+
+                    var dialog = new DocConverter.Views.UpdateDialog(updateVm);
+                    if (Application.Current?.MainWindow != null && Application.Current.MainWindow.IsVisible)
+                    {
+                        dialog.Owner = Application.Current.MainWindow;
+                    }
+                    dialog.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("CheckForUpdatesOnStartupAsync", ex);
+            }
         }
 
         private bool CanCheckForUpdates() => !IsBusy;
@@ -148,14 +188,18 @@ namespace DocConverter.ViewModels
         // ==================== Constructor ====================
         public MainViewModel()
         {
-            HomeHub.OnNavigateToOfficeRequested = () => SelectedAppSection = 1;
+            HomeHub.OnNavigateToOfficeRequested = () =>
+            {
+                SelectedAppSection = 1;
+                SelectedWorkspaceIndex = 0;
+            };
+            HomeHub.OnNavigateToPdfStudioRequested = () => SelectedAppSection = 3;
             HomeHub.OnNavigateToDevicesRequested = () => SelectedAppSection = 2;
             HomeHub.OnNavigateToScannerStudioRequested = () => { SelectedAppSection = 2; DeviceHub.SelectedHubTabIndex = 1; };
             HomeHub.OnNavigateToPrinterStudioRequested = () => { SelectedAppSection = 2; DeviceHub.SelectedHubTabIndex = 2; };
             DeviceHub.OnSendToPdfStudioRequested = async pdfPath =>
             {
-                SelectedAppSection = 1;
-                SelectedWorkspaceIndex = 0;
+                SelectedAppSection = 3;
                 await PdfStudio.OpenPdfPathAsync(pdfPath, promptForUnsavedChanges: false);
             };
 

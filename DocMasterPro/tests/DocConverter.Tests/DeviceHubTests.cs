@@ -98,21 +98,25 @@ namespace DocConverter.Tests
         {
             var homeVm = new HomeHubViewModel();
             bool officeInvoked = false;
+            bool pdfStudioInvoked = false;
             bool devicesInvoked = false;
             bool scannerInvoked = false;
             bool printerInvoked = false;
 
             homeVm.OnNavigateToOfficeRequested = () => officeInvoked = true;
+            homeVm.OnNavigateToPdfStudioRequested = () => pdfStudioInvoked = true;
             homeVm.OnNavigateToDevicesRequested = () => devicesInvoked = true;
             homeVm.OnNavigateToScannerStudioRequested = () => scannerInvoked = true;
             homeVm.OnNavigateToPrinterStudioRequested = () => printerInvoked = true;
 
             homeVm.OpenOfficeSuite();
+            homeVm.OpenPdfStudio();
             homeVm.OpenDeviceHub();
             homeVm.OpenScannerStudio();
             homeVm.OpenPrinterStudio();
 
             officeInvoked.Should().BeTrue();
+            pdfStudioInvoked.Should().BeTrue();
             devicesInvoked.Should().BeTrue();
             scannerInvoked.Should().BeTrue();
             printerInvoked.Should().BeTrue();
@@ -129,6 +133,11 @@ namespace DocConverter.Tests
             // Navigate to Office (Section 1)
             vm.NavigateToOffice();
             vm.SelectedAppSection.Should().Be(1);
+            vm.SelectedWorkspaceIndex.Should().Be(0);
+
+            // Navigate to PDF Studio (Section 3)
+            vm.NavigateToPdfStudio();
+            vm.SelectedAppSection.Should().Be(3);
 
             // Navigate to Devices (Section 2)
             vm.NavigateToDevices();

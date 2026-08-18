@@ -97,11 +97,13 @@
                    FontSize="15" Foreground="#64748B" Margin="0,6,0,0"/>
       </StackPanel>
 
-      <!-- 2 Ana Seçenek Kartı -->
+      <!-- 3 Ana Seçenek Kartı -->
       <Grid Grid.Row="1" Margin="0,0,0,28">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="20"/>
+          <ColumnDefinition Width="16"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="16"/>
           <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -118,38 +120,81 @@
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="#EFF6FF" CornerRadius="12" Width="60" Height="60" HorizontalAlignment="Left" Margin="0,0,0,16">
-              <TextBlock Text="📁" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Border Grid.Row="0" Background="#EFF6FF" CornerRadius="12" Width="52" Height="52" HorizontalAlignment="Left" Margin="0,0,0,14">
+              <TextBlock Text="📁" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
 
-            <TextBlock Grid.Row="1" Text="Office ve Belge İşlemleri" FontSize="22" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,8"/>
-            <TextBlock Grid.Row="2" Text="PDF birleştirme, bölme, düzenleme, Word/Excel/PowerPoint ve görüntü dönüştürme stüdyosu."
-                       FontSize="14" Foreground="#64748B" TextWrapping="Wrap" LineHeight="20" Margin="0,0,0,16"/>
+            <TextBlock Grid.Row="1" Text="Office &amp; Belge İşlemleri" FontSize="19" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="2" Text="Word, Excel, PowerPoint, PDF birleştirme, bölme ve dönüştürme stüdyosu."
+                       FontSize="13" Foreground="#64748B" TextWrapping="Wrap" LineHeight="18" Margin="0,0,0,14"/>
 
             <!-- Özellik Maddeleri -->
-            <StackPanel Grid.Row="3" Margin="0,0,0,20">
+            <StackPanel Grid.Row="3" Margin="0,0,0,16">
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,8,0"/>
-                <TextBlock Text="PDF Studio ile canlı sayfa düzenleme ve önizleme" FontSize="13" Foreground="#475569"/>
+                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="Word, Excel, PPT → PDF dönüştürme" FontSize="12" Foreground="#475569"/>
               </StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,8,0"/>
-                <TextBlock Text="Word, Excel, PPT, TXT ve Görüntü dosyalarından PDF oluşturma" FontSize="13" Foreground="#475569"/>
+                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="PDF → Düzenlenebilir Word (DOCX)" FontSize="12" Foreground="#475569"/>
               </StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,8,0"/>
-                <TextBlock Text="Sürükle-bırak toplu dosya işleme ve sayfa aralıklarıyla bölme" FontSize="13" Foreground="#475569"/>
+                <TextBlock Text="✓" Foreground="#2563EB" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="PDF Birleştirme, Bölme ve Düzenleme" FontSize="12" Foreground="#475569"/>
               </StackPanel>
             </StackPanel>
 
-            <Border Grid.Row="4" Background="#2563EB" CornerRadius="8" Padding="16,10" HorizontalAlignment="Left">
-              <TextBlock Text="Office Modülüne Git →" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+            <Border Grid.Row="4" Background="#2563EB" CornerRadius="8" Padding="14,8" HorizontalAlignment="Left">
+              <TextBlock Text="Office Modülüne Git →" FontSize="13" FontWeight="SemiBold" Foreground="White"/>
             </Border>
           </Grid>
         </Button>
 
-        <!-- KART 2: Yazıcılar ve Tarayıcılar -->
+        <!-- KART 2: PDF Studio -->
         <Button Grid.Column="2"
+                Style="{StaticResource HubCardButtonStyle}"
+                Command="{Binding OpenPdfStudioCommand}">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#FEF3C7" CornerRadius="12" Width="52" Height="52" HorizontalAlignment="Left" Margin="0,0,0,14">
+              <TextBlock Text="⚡" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+
+            <TextBlock Grid.Row="1" Text="PDF Studio" FontSize="19" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="2" Text="Gelişmiş PDF görüntüleme, sayfa yönetimi, çizim araçları ve metin arama."
+                       FontSize="13" Foreground="#64748B" TextWrapping="Wrap" LineHeight="18" Margin="0,0,0,14"/>
+
+            <!-- Özellik Maddeleri -->
+            <StackPanel Grid.Row="3" Margin="0,0,0,16">
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#D97706" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="Canlı PDF sayfa önizleme ve yakınlaştırma" FontSize="12" Foreground="#475569"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#D97706" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="Vurgulama, metin kutusu ve not ekleme" FontSize="12" Foreground="#475569"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="✓" Foreground="#D97706" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="PDF içi metin arama ve doğrudan yazdırma" FontSize="12" Foreground="#475569"/>
+              </StackPanel>
+            </StackPanel>
+
+            <Border Grid.Row="4" Background="#D97706" CornerRadius="8" Padding="14,8" HorizontalAlignment="Left">
+              <TextBlock Text="PDF Studio'yu Aç →" FontSize="13" FontWeight="SemiBold" Foreground="White"/>
+            </Border>
+          </Grid>
+        </Button>
+
+        <!-- KART 3: Yazıcılar ve Tarayıcılar -->
+        <Button Grid.Column="4"
                 Style="{StaticResource HubCardButtonStyle}"
                 Command="{Binding OpenDeviceHubCommand}">
           <Grid>
@@ -161,38 +206,38 @@
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="#F0FDF4" CornerRadius="12" Width="60" Height="60" HorizontalAlignment="Left" Margin="0,0,0,16">
-              <TextBlock Text="🖨️" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Border Grid.Row="0" Background="#F0FDF4" CornerRadius="12" Width="52" Height="52" HorizontalAlignment="Left" Margin="0,0,0,14">
+              <TextBlock Text="🖨️" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
 
-            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-              <TextBlock Text="Yazıcılar ve Tarayıcılar" FontSize="22" FontWeight="Bold" Foreground="#1E293B"/>
-              <Border Background="#DCFCE7" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="OTOMATİK SÜRÜCÜ" FontSize="10" FontWeight="Bold" Foreground="#15803D"/>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
+              <TextBlock Text="Yazıcılar &amp; Tarayıcılar" FontSize="19" FontWeight="Bold" Foreground="#1E293B"/>
+              <Border Background="#DCFCE7" CornerRadius="4" Padding="5,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="OTOMATİK SÜRÜCÜ" FontSize="9" FontWeight="Bold" Foreground="#15803D"/>
               </Border>
             </StackPanel>
 
-            <TextBlock Grid.Row="2" Text="Bilgisayara bağlı ve ağdaki tüm aygıtları otomatik bulur, sürücüleri hazır hale getirir ve kullanıma sunar."
-                       FontSize="14" Foreground="#64748B" TextWrapping="Wrap" LineHeight="20" Margin="0,0,0,16"/>
+            <TextBlock Grid.Row="2" Text="Bilgisayara bağlı ve ağdaki tüm aygıtları otomatik bulur, sürücüleri hazır hale getirir."
+                       FontSize="13" Foreground="#64748B" TextWrapping="Wrap" LineHeight="18" Margin="0,0,0,14"/>
 
             <!-- Donanım Özel Maddeleri -->
-            <StackPanel Grid.Row="3" Margin="0,0,0,20">
+            <StackPanel Grid.Row="3" Margin="0,0,0,16">
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,8,0"/>
-                <TextBlock Text="Fujitsu fi-6230 / fi-6230Z ADF &amp; Cam çift taraflı yüksek hızlı tarama" FontSize="13" Foreground="#475569"/>
+                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="Fujitsu fi-6230 ADF çift taraflı hızlı tarama" FontSize="12" Foreground="#475569"/>
               </StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,8,0"/>
-                <TextBlock Text="Ricoh SP 4510SF Ağ / USB doğrudan PCL6 yazdırma ve kuyruk yönetimi" FontSize="13" Foreground="#475569"/>
+                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="Ricoh SP 4510SF Ağ / USB doğrudan yazdırma" FontSize="12" Foreground="#475569"/>
               </StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,8,0"/>
-                <TextBlock Text="İlk seferde otomatik kurulum; sonraki açılışlarda anında kullanıma hazır" FontSize="13" Foreground="#475569"/>
+                <TextBlock Text="✓" Foreground="#16A34A" FontWeight="Bold" Margin="0,0,6,0"/>
+                <TextBlock Text="Tek tıkla kurulum ve hazır bağlantı" FontSize="12" Foreground="#475569"/>
               </StackPanel>
             </StackPanel>
 
-            <Border Grid.Row="4" Background="#16A34A" CornerRadius="8" Padding="16,10" HorizontalAlignment="Left">
-              <TextBlock Text="Yazıcı ve Tarayıcı Merkezini Aç →" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+            <Border Grid.Row="4" Background="#16A34A" CornerRadius="8" Padding="14,8" HorizontalAlignment="Left">
+              <TextBlock Text="Aygıt Merkezine Git →" FontSize="13" FontWeight="SemiBold" Foreground="White"/>
             </Border>
           </Grid>
         </Button>
@@ -212,12 +257,14 @@
           </StackPanel>
 
           <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
-            <Button Content="📑 Fujitsu ile Belge Tara" Style="{StaticResource QuickActionButtonStyle}"
-                    Command="{Binding OpenScannerStudioCommand}"/>
-            <Button Content="🖨️ Ricoh ile Hızlı Yazdır" Style="{StaticResource QuickActionButtonStyle}"
-                    Command="{Binding OpenPrinterStudioCommand}"/>
-            <Button Content="✂️ PDF Böl / Birleştir" Style="{StaticResource QuickActionButtonStyle}"
+            <Button Content="📊 Office → PDF" Style="{StaticResource QuickActionButtonStyle}"
                     Command="{Binding OpenOfficeSuiteCommand}"/>
+            <Button Content="⚡ PDF Studio" Style="{StaticResource QuickActionButtonStyle}"
+                    Command="{Binding OpenPdfStudioCommand}"/>
+            <Button Content="📑 Fujitsu ile Tara" Style="{StaticResource QuickActionButtonStyle}"
+                    Command="{Binding OpenScannerStudioCommand}"/>
+            <Button Content="🖨️ Ricoh ile Yazdır" Style="{StaticResource QuickActionButtonStyle}"
+                    Command="{Binding OpenPrinterStudioCommand}"/>
           </StackPanel>
         </Grid>
       </Border>
