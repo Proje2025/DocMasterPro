@@ -29,6 +29,12 @@ packages/
 
 # Installer output
 installer/Output/
+publish-single/
+publish-fd/
+publish-velopack/
+Releases/
+*.exe
+*.pdb
 
 # Temporary files
 *.tmp

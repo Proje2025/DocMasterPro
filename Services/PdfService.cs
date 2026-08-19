@@ -89,11 +89,14 @@ namespace DocConverter.Services
 
         /// <summary>
         /// Bir PDF dosyasını sayfa aralığına göre böler.
+        /// Düzeltme #4: PDF açılamazsa sessiz return yerine exception fırlatır.
+        /// Düzeltme #11: Her aralık tamamlandıkça progress raporlanır.
         /// </summary>
         public async Task SplitPdfAsync(
             string sourcePath,
             string outputDir,
-            List<(int From, int To)> pageRanges)
+            List<(int From, int To)> pageRanges,
+            IProgress<int>? progress = null)
         {
             await Task.Run(() =>
             {
@@ -117,14 +120,16 @@ namespace DocConverter.Services
                     }
                 }
 
+                // Düzeltme #4: Sessiz return yerine exception fırlat
                 if (source == null)
                 {
-                    FileLogger.LogError("SplitPdf", new Exception($"PDF dosyası açılamadı: {Path.GetFileName(sourcePath)}"));
-                    return;
+                    throw new Exception($"PDF dosyası açılamadı: {Path.GetFileName(sourcePath)}");
                 }
 
                 Directory.CreateDirectory(outputDir);
                 string baseName = Path.GetFileNameWithoutExtension(sourcePath);
+                int total = pageRanges.Count;
+                int done = 0;
 
                 try
                 {
@@ -134,6 +139,8 @@ namespace DocConverter.Services
                         {
                             FileLogger.LogError("SplitPdf",
                                 new ArgumentOutOfRangeException($"Geçersiz aralık: {from}-{to} (toplam sayfa: {source.PageCount})"));
+                            done++;
+                            progress?.Report(done * 100 / total);
                             continue;
                         }
 
@@ -158,6 +165,10 @@ namespace DocConverter.Services
                         {
                             FileLogger.LogError("SplitPdf", new Exception($"Sayfa aralığı işlenemedi: {from}-{safeTo}", ex));
                         }
+
+                        done++;
+                        // Düzeltme #11: Her aralık sonrası progress raporu
+                        progress?.Report(done * 100 / total);
                     }
                 }
                 finally
@@ -165,6 +176,22 @@ namespace DocConverter.Services
                     source.Dispose();
                 }
             });
+        }
+
+        /// <summary>
+        /// Verilen PDF dosyasının sayfa sayısını döndürür.
+        /// </summary>
+        public int GetPageCount(string pdfPath)
+        {
+            try
+            {
+                using var doc = PdfReader.Open(pdfPath, PdfDocumentOpenMode.Import);
+                return doc.PageCount;
+            }
+            catch
+            {
+                return 0;
+            }
         }
     }
 }

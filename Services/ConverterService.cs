@@ -60,8 +60,11 @@ namespace DocConverter.Services
 
         /// <summary>
         /// PDF'in her sayfasını ayrı görüntü dosyasına dönüştürür.
+        /// Düzeltme #11: IProgress<int> parametresiyle sayfa sayfa ilerleme raporlar.
+        /// Düzeltme #13: Sayfaları tek tek işleyerek büyük PDF'lerde OutOfMemoryException önler.
         /// </summary>
-        public async Task ConvertPdfToImagesAsync(string pdfPath, string outputDir, string format = "png")
+        public async Task ConvertPdfToImagesAsync(string pdfPath, string outputDir, string format = "png",
+            IProgress<int>? progress = null)
         {
             // Ghostscript kontrolü
             if (!IsGhostscriptAvailable())
@@ -79,66 +82,86 @@ namespace DocConverter.Services
                 Directory.CreateDirectory(outputDir);
                 string baseName = Path.GetFileNameWithoutExtension(pdfPath);
 
+                // Toplam sayfa sayısını öğren
+                int totalPages;
                 try
                 {
-                    // Magick.NET ile PDF'i görüntülere dönüştür
-                    using var images = new MagickImageCollection();
-                    
-                    // Ghostscript yoksa veya PDF okunamıyorsa açıklayıcı hata ver
+                    using var doc = PdfSharp.Pdf.IO.PdfReader.Open(pdfPath, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+                    totalPages = doc.PageCount;
+                }
+                catch
+                {
+                    totalPages = 0;
+                }
+
+                if (totalPages == 0)
+                    throw new Exception("PDF dosyasında hiç sayfa bulunamadı veya sayfalar okunamadı.");
+
+                // Düzeltme #13: Sayfaları tek tek okuyarak belleği tasarruflu kullan
+                for (int i = 0; i < totalPages; i++)
+                {
                     try
                     {
-                        images.Read(pdfPath);
-                    }
-                    catch (MagickCorruptImageErrorException ex)
-                    {
-                        throw new Exception($"PDF dosyası bozuk veya okunamıyor: {ex.Message}", ex);
-                    }
-                    catch (Exception ex) when (ex.Message.Contains("PDF") || ex.Message.Contains("ghostscript") || ex.Message.Contains("delegate") || ex.Message.Contains("gswin"))
-                    {
-                        throw new Exception(
-                            "PDF görüntüye dönüştürülemedi.\n\n" +
-                            "Ghostscript yüklü değil veya düzgün yapılandırılmamış.\n\n" +
-                            "Çözüm için:\n" +
-                            "1. https://ghostscript.com/releases/gsdnld.html adresine gidin\n" +
-                            "2. 'Ghostscript 10.04.0 for Windows (64 bit)' indirin\n" +
-                            "3. Kurulumu tamamlayın (PATH'e eklendiğinden emin olun)\n" +
-                            "4. Bu uygulamayı yeniden başlatın\n\n" +
-                            "Teknik detay: " + ex.Message, ex);
-                    }
-
-                    if (images.Count == 0)
-                    {
-                        throw new Exception("PDF dosyasında hiç sayfa bulunamadı veya sayfalar okunamadı.");
-                    }
-
-                    for (int i = 0; i < images.Count; i++)
-                    {
-                        var image = images[i];
-                        image.Format = format.ToLowerInvariant() switch
+                        // Her sayfa için ayrı bir MagickImageCollection kullan
+                        var settings = new MagickReadSettings
                         {
-                            "jpg" or "jpeg" => MagickFormat.Jpeg,
-                            "png" => MagickFormat.Png,
-                            "bmp" => MagickFormat.Bmp,
-                            "gif" => MagickFormat.Gif,
-                            "tiff" or "tif" => MagickFormat.Tiff,
-                            "webp" => MagickFormat.WebP,
-                            _ => MagickFormat.Png
+                            FrameIndex = i,
+                            FrameCount = 1
                         };
 
-                        string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{i + 1}.{format}");
-                        image.Write(outputPath);
-                        
-                        // Yazma başarılı mı kontrol et
-                        if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+                        using var images = new MagickImageCollection();
+                        try
                         {
-                            throw new Exception($"Sayfa {i + 1} kaydedilemedi: {outputPath}");
+                            images.Read(pdfPath, settings);
+                        }
+                        catch (MagickCorruptImageErrorException ex)
+                        {
+                            throw new Exception($"PDF dosyası bozuk veya okunamıyor: {ex.Message}", ex);
+                        }
+                        catch (Exception ex) when (ex.Message.Contains("PDF") || ex.Message.Contains("ghostscript") || ex.Message.Contains("delegate") || ex.Message.Contains("gswin"))
+                        {
+                            throw new Exception(
+                                "PDF görüntüye dönüştürülemedi.\n\n" +
+                                "Ghostscript yüklü değil veya düzgün yapılandırılmamış.\n\n" +
+                                "Çözüm için:\n" +
+                                "1. https://ghostscript.com/releases/gsdnld.html adresine gidin\n" +
+                                "2. 'Ghostscript 10.04.0 for Windows (64 bit)' indirin\n" +
+                                "3. Kurulumu tamamlayın (PATH'e eklendiğinden emin olun)\n" +
+                                "4. Bu uygulamayı yeniden başlatın\n\n" +
+                                "Teknik detay: " + ex.Message, ex);
+                        }
+
+                        if (images.Count > 0)
+                        {
+                            var image = images[0];
+                            image.Format = format.ToLowerInvariant() switch
+                            {
+                                "jpg" or "jpeg" => MagickFormat.Jpeg,
+                                "png" => MagickFormat.Png,
+                                "bmp" => MagickFormat.Bmp,
+                                "gif" => MagickFormat.Gif,
+                                "tiff" or "tif" => MagickFormat.Tiff,
+                                "webp" => MagickFormat.WebP,
+                                _ => MagickFormat.Png
+                            };
+
+                            string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{i + 1}.{format}");
+                            image.Write(outputPath);
+
+                            if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+                            {
+                                throw new Exception($"Sayfa {i + 1} kaydedilemedi: {outputPath}");
+                            }
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    FileLogger.LogError("ConvertPdfToImagesAsync", ex);
-                    throw;
+                    catch (Exception ex)
+                    {
+                        FileLogger.LogError("ConvertPdfToImagesAsync", ex);
+                        throw;
+                    }
+
+                    // Düzeltme #11: Her sayfa sonrası progress raporu
+                    progress?.Report((i + 1) * 100 / totalPages);
                 }
             });
         }

@@ -180,7 +180,10 @@
                     Command="{Binding OpenPdfForSplitCommand}"/>
             <TextBlock Text="{Binding SplitPdfPath}" VerticalAlignment="Center"
                        Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
-                       MaxWidth="500" ToolTip="{Binding SplitPdfPath}"/>
+                       MaxWidth="440" ToolTip="{Binding SplitPdfPath}"/>
+            <!-- Düzeltme #9: Seçili PDF'in toplam sayfa sayısını göster -->
+            <TextBlock Text="{Binding SplitPdfPageCountText}" VerticalAlignment="Center"
+                       Margin="8,0,0,0" Foreground="#4A90D9" FontWeight="SemiBold"/>
           </StackPanel>
 
           <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">

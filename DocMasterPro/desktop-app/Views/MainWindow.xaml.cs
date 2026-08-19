@@ -35,8 +35,6 @@ namespace DocConverter.Views
             if (DataContext is not MainViewModel vm)
                 return;
 
-            vm.SelectedAppSection = 3;
-
             if (!PathValidator.TryResolveExistingPdfPath(path, out string pdfPath))
             {
                 MessageBox.Show(
@@ -46,6 +44,8 @@ namespace DocConverter.Views
                     MessageBoxImage.Warning);
                 return;
             }
+
+            vm.SelectedAppSection = 3;
 
             bool opened = await vm.PdfStudio.OpenPdfPathAsync(pdfPath, promptForUnsavedChanges: true);
             if (opened && !string.IsNullOrWhiteSpace(successStatusMessage))

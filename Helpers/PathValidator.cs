@@ -16,10 +16,11 @@ namespace DocConverter.Helpers
         };
 
         /// <summary>
-        /// Office formatları (Word, Excel, PowerPoint).
+        /// Office formatları (Word, Excel, PowerPoint, metin dosyaları).
         /// </summary>
         public static readonly string[] OfficeExtensions = {
-            ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt"
+            ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
+            ".txt", ".rtf", ".html", ".htm"
         };
 
         /// <summary>

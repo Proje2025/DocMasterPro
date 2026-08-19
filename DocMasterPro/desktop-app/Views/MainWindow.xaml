@@ -37,7 +37,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#1E293B"/>
+                <Setter TargetName="BtnBorder" Property="Opacity" Value="0.85"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -262,8 +262,9 @@
     <!-- Main Dynamic Content Grid -->
     <Grid Grid.Row="1">
       <!-- 0. Giriş Sayfası (Home Hub) -->
-      <views:HomeHubView DataContext="{Binding HomeHub}"
-                         Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=0}"/>
+      <Grid Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=0}">
+        <views:HomeHubView DataContext="{Binding HomeHub}"/>
+      </Grid>
 
       <!-- 1. Office ve Belge İşlemleri (TabControl) -->
       <TabControl x:Name="MainTabs"
@@ -756,12 +757,14 @@
     </TabControl>
 
     <!-- 2. Yazıcılar ve Tarayıcılar (Device Hub) -->
-    <views:DeviceHubView DataContext="{Binding DeviceHub}"
-                         Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=2}"/>
+    <Grid Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=2}">
+      <views:DeviceHubView DataContext="{Binding DeviceHub}"/>
+    </Grid>
 
     <!-- 3. PDF Studio -->
-    <views:PdfStudioView DataContext="{Binding PdfStudio}"
-                         Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=3}"/>
+    <Grid Visibility="{Binding SelectedAppSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=3}">
+      <views:PdfStudioView DataContext="{Binding PdfStudio}"/>
+    </Grid>
     </Grid>
   </Grid>
 </Window>

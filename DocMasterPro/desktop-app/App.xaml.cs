@@ -1,4 +1,5 @@
 using System.Windows;
+using DocConverter.Helpers;
 using DocConverter.Services;
 using DocConverter.Views;
 using PdfSharp.Fonts;
@@ -33,9 +34,12 @@ namespace DocConverter
             MainWindow = window;
 
             string? startupPath = (startupArgs.Length > 0 ? startupArgs : e.Args)
-                .FirstOrDefault(arg => !string.IsNullOrWhiteSpace(arg));
-            if (!string.IsNullOrWhiteSpace(startupPath))
-                window.Loaded += async (_, _) => await window.OpenPdfInStudioAsync(startupPath);
+                .FirstOrDefault(arg => !string.IsNullOrWhiteSpace(arg) && !arg.StartsWith('-') && !arg.StartsWith('/'));
+            if (!string.IsNullOrWhiteSpace(startupPath) && PathValidator.TryResolveExistingPdfPath(startupPath, out string? resolvedPdf) && !string.IsNullOrWhiteSpace(resolvedPdf))
+            {
+                string targetPdf = resolvedPdf;
+                window.Loaded += async (_, _) => await window.OpenPdfInStudioAsync(targetPdf);
+            }
 
             window.Show();
         }

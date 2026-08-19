@@ -30,6 +30,11 @@ namespace DocConverter.ViewModels
         private int progress;
 
         [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(MergeCommand))]
+        [NotifyCanExecuteChangedFor(nameof(SplitCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ConvertImagesToPdfCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ExportPdfToImagesCommand))]
+        [NotifyCanExecuteChangedFor(nameof(ConvertOfficeToPdfCommand))]
         private bool isBusy;
 
         // ==================== Tab 1: PDF Birleştirme ====================
@@ -48,6 +53,19 @@ namespace DocConverter.ViewModels
 
         [ObservableProperty]
         private ObservableCollection<string> splitRanges = new();
+
+        /// <summary>
+        /// Seçili PDF'in toplam sayfa sayısı (Fix #8 ve #9 için).
+        /// </summary>
+        [ObservableProperty]
+        private int splitPdfPageCount = 0;
+
+        /// <summary>
+        /// UI'da göstermek için sayfa sayısı metni.
+        /// </summary>
+        public string SplitPdfPageCountText =>
+            SplitPdfPageCount > 0 ? $"({SplitPdfPageCount} sayfa)" : "";
+
 
         // ==================== Tab 3: Görüntü → PDF ====================
         [ObservableProperty]
@@ -148,6 +166,17 @@ namespace DocConverter.ViewModels
         {
             if (MergeDocuments.Count == 0) return;
 
+            // Düzeltme #3: Office dosyaları varsa Office kurulumunu kontrol et
+            bool hasOfficeFiles = MergeDocuments.Any(d =>
+                PathValidator.OfficeExtensions.Contains(d.Extension));
+            if (hasOfficeFiles && !_officeConv.IsOfficeInstalled())
+            {
+                MessageBox.Show(
+                    "Listede Office dosyaları var ancak Microsoft Office kurulu değil.\n\n" +
+                    "Office dosyaları atlanacak. Devam edilsin mi?",
+                    "Office Kurulu Değil", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
             var saveDlg = new SaveFileDialog
             {
                 Filter = "PDF Dosyası|*.pdf",
@@ -198,8 +227,11 @@ namespace DocConverter.ViewModels
                 var reporter = new Progress<int>(v => Progress = 50 + (v / 2));
                 await _pdf.MergePdfsAsync(pdfPaths, saveDlg.FileName, reporter);
 
-                MessageBox.Show("Birleştirme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                // Düzeltme #12: Birleştirilen PDF'i Explorer'da göster
+                var result = MessageBox.Show("Birleştirme tamamlandı!\n\nDosya konumu açılsın mı?", "DocMaster Pro",
+                    MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                    System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{saveDlg.FileName}\"");
             }
             finally
             {
@@ -211,6 +243,7 @@ namespace DocConverter.ViewModels
                 Progress = 100;
             }
         }
+
 
         private bool CanMerge() => !IsBusy && MergeDocuments.Count > 0;
 
@@ -239,6 +272,10 @@ namespace DocConverter.ViewModels
             if (dlg.ShowDialog() == true)
             {
                 SplitPdfPath = dlg.FileName;
+
+                // Düzeltme #8 ve #9: Gerçek sayfa sayısını hesapla
+                SplitPdfPageCount = _pdf.GetPageCount(dlg.FileName);
+                OnPropertyChanged(nameof(SplitPdfPageCountText));
 
                 var folderDlg = new OpenFolderDialog { Title = "Çıkış klasörünü seçin" };
                 if (folderDlg.ShowDialog() == true)
@@ -270,7 +307,9 @@ namespace DocConverter.ViewModels
         {
             if (string.IsNullOrWhiteSpace(SplitPdfPath)) return;
 
-            var ranges = PathValidator.ValidatePageRanges(PageRangeText, 9999);
+            // Düzeltme #8: Gerçek sayfa sayısını kullan (9999 değil)
+            int maxPage = SplitPdfPageCount > 0 ? SplitPdfPageCount : 9999;
+            var ranges = PathValidator.ValidatePageRanges(PageRangeText, maxPage);
             if (ranges.Count == 0)
             {
                 MessageBox.Show("Geçerli bir sayfa aralığı girin.\nÖrnek: 1-3, 5-7",
@@ -290,10 +329,16 @@ namespace DocConverter.ViewModels
 
             try
             {
-                await _pdf.SplitPdfAsync(SplitPdfPath, SplitOutputFolder, ranges);
+                // Düzeltme #11: progress reporter ile SplitPdfAsync çağır
+                var reporter = new Progress<int>(v => Progress = v);
+                await _pdf.SplitPdfAsync(SplitPdfPath, SplitOutputFolder, ranges, reporter);
                 Progress = 100;
-                MessageBox.Show("PDF bölme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // Düzeltme #12: Çıkış klasörünü Explorer'da aç
+                var result = MessageBox.Show("PDF bölme tamamlandı!\n\nÇıkış klasörü açılsın mı?", "DocMaster Pro",
+                    MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                    System.Diagnostics.Process.Start("explorer.exe", SplitOutputFolder);
             }
             catch (Exception ex)
             {
@@ -308,6 +353,7 @@ namespace DocConverter.ViewModels
         }
 
         private bool CanSplit() => !IsBusy && !string.IsNullOrWhiteSpace(SplitPdfPath) && !string.IsNullOrWhiteSpace(PageRangeText);
+
 
         // ==================== Tab 3: Görüntü → PDF Komutları ====================
         [RelayCommand]
@@ -364,7 +410,8 @@ namespace DocConverter.ViewModels
                 {
                     doc.Status = "Converting";
                     current++;
-                    Progress = (current * 100) / total;
+                    // Düzeltme #6: İlk yarı (0-50) görüntü→PDF dönüşümü için
+                    Progress = (current * 50) / total;
 
                     try
                     {
@@ -399,11 +446,15 @@ namespace DocConverter.ViewModels
                         return;
                 }
 
-                var reporter = new Progress<int>(v => Progress = v);
+                // Düzeltme #6: İkinci yarı (50-100) birleştirme için
+                var reporter = new Progress<int>(v => Progress = 50 + (v / 2));
                 await _pdf.MergePdfsAsync(pdfPaths, saveDlg.FileName, reporter);
 
-                MessageBox.Show("PDF oluşturuldu!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                // Düzeltme #12: Oluşturulan PDF'i Explorer'da göster
+                var openResult = MessageBox.Show("PDF oluşturuldu!\n\nDosya konumu açılsın mı?", "DocMaster Pro",
+                    MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (openResult == MessageBoxResult.Yes)
+                    System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{saveDlg.FileName}\"");
             }
             finally
             {
@@ -415,6 +466,7 @@ namespace DocConverter.ViewModels
                 Progress = 100;
             }
         }
+
 
         private bool CanConvertImages() => !IsBusy && ImageDocuments.Count > 0;
 
@@ -465,10 +517,16 @@ namespace DocConverter.ViewModels
 
             try
             {
-                await _conv.ConvertPdfToImagesAsync(ExportPdfPath, ExportOutputFolder, SelectedImageFormat.ToLower());
+                // Düzeltme #11: progress reporter ekle
+                var reporter = new Progress<int>(v => Progress = v);
+                await _conv.ConvertPdfToImagesAsync(ExportPdfPath, ExportOutputFolder, SelectedImageFormat.ToLower(), reporter);
                 Progress = 100;
-                MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // Düzeltme #12: Çıkış klasörünü Explorer'da aç
+                var result = MessageBox.Show("Dönüştürme tamamlandı!\n\nÇıkış klasörü açılsın mı?", "DocMaster Pro",
+                    MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                    System.Diagnostics.Process.Start("explorer.exe", ExportOutputFolder);
             }
             catch (Exception ex)
             {
@@ -490,7 +548,12 @@ namespace DocConverter.ViewModels
         {
             var dlg = new OpenFileDialog
             {
-                Filter = "Office Dosyaları|*.docx;*.doc;*.xlsx;*.xls;*.pptx;*.ppt|Tüm Dosyalar|*.*",
+                // Düzeltme #10: txt ve rtf formatlarını filteye ekle
+                Filter = "Office Dosyaları|*.docx;*.doc;*.xlsx;*.xls;*.pptx;*.ppt;*.txt;*.rtf|" +
+                         "Word Dosyaları|*.docx;*.doc|" +
+                         "Excel Dosyaları|*.xlsx;*.xls|" +
+                         "PowerPoint Dosyaları|*.pptx;*.ppt|" +
+                         "Metin Dosyaları|*.txt;*.rtf",
                 Multiselect = true
             };
 
@@ -499,6 +562,9 @@ namespace DocConverter.ViewModels
             foreach (var f in dlg.FileNames)
             {
                 if (!PathValidator.IsPathSafe(f)) continue;
+                string ext = Path.GetExtension(f).ToLowerInvariant();
+                // Düzeltme #10: Sadece desteklenen Office uzantılarını kabul et
+                if (!PathValidator.OfficeExtensions.Contains(ext)) continue;
                 OfficeDocuments.Add(CreateDocumentItem(f));
             }
         }
@@ -507,6 +573,16 @@ namespace DocConverter.ViewModels
         public async Task ConvertOfficeToPdf()
         {
             if (OfficeDocuments.Count == 0) return;
+
+            // Düzeltme #3: Office kurulu mu kontrol et
+            if (!_officeConv.IsOfficeInstalled())
+            {
+                MessageBox.Show(
+                    "Bu işlem için Microsoft Office kurulu olmalıdır.\n\n" +
+                    "Word, Excel veya PowerPoint dosyalarını dönüştürmek için Microsoft Office gereklidir.",
+                    "Office Kurulu Değil", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             var folderDlg = new OpenFolderDialog { Title = "PDF'lerin kaydedileceği klasörü seçin" };
             if (folderDlg.ShowDialog() != true) return;
@@ -540,8 +616,11 @@ namespace DocConverter.ViewModels
                     }
                 }
 
-                MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                // Düzeltme #12: Çıkış klasörünü Explorer'da aç
+                var result = MessageBox.Show("Dönüştürme tamamlandı!\n\nÇıkış klasörü açılsın mı?", "DocMaster Pro",
+                    MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                    System.Diagnostics.Process.Start("explorer.exe", folderDlg.FolderName);
             }
             finally
             {
@@ -563,6 +642,7 @@ namespace DocConverter.ViewModels
         {
             OfficeDocuments.Clear();
         }
+
 
         // ==================== Tab 6: PDF Düzenleme Komutları ====================
         [RelayCommand]
@@ -960,7 +1040,8 @@ namespace DocConverter.ViewModels
                 using var doc = PdfReader.Open(EditPdfPath, PdfDocumentOpenMode.Modify);
                 foreach (PdfPage page in doc.Pages)
                 {
-                    var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
+                    // Düzeltme #5: using ile XGraphics'i doğru dispose et (kaynak sızıntısını önler)
+                    using var gfx = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append);
                     var font = new XFont("Arial", 48);
                     var brush = new XSolidBrush(XColor.FromArgb(80, 128, 128, 128));
 
@@ -1000,8 +1081,11 @@ namespace DocConverter.ViewModels
                 try
                 {
                     File.Copy(EditPdfPath, saveDlg.FileName, true);
-                    MessageBox.Show("PDF kaydedildi!", "DocMaster Pro",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    // Düzeltme #12: Kaydedilen PDF'i Explorer'da göster
+                    var openResult = MessageBox.Show("PDF kaydedildi!\n\nDosya konumu açılsın mı?", "DocMaster Pro",
+                        MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (openResult == MessageBoxResult.Yes)
+                        System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{saveDlg.FileName}\"");
                 }
                 catch (Exception ex)
                 {
@@ -1058,8 +1142,11 @@ namespace DocConverter.ViewModels
                 await _officeConv.ConvertExcelToPdfAsync(inputPath, outputPath);
             else if (extension is ".pptx" or ".ppt")
                 await _officeConv.ConvertPowerPointToPdfAsync(inputPath, outputPath);
-            else if (extension is ".txt" or ".rtf")
+            else if (extension is ".txt" or ".rtf" or ".html" or ".htm")
                 await _officeConv.ConvertTxtToPdfAsync(inputPath, outputPath);
+            else
+                // Düzeltme #7: Desteklenmeyen uzantı sessizce yok sayılmamalı
+                throw new NotSupportedException($"Desteklenmeyen dosya formatı: {extension}");
         }
     }
 

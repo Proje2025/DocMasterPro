@@ -31,7 +31,7 @@ namespace DocConverter.Services
             _httpClient = httpClient ?? new HttpClient();
             if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
             {
-                _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("DocMasterPro", "1.2.0"));
+                _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("DocMasterPro", "1.2.1"));
                 _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             }
         }
@@ -48,7 +48,7 @@ namespace DocConverter.Services
                     return $"{version.Major}.{version.Minor}.{version.Build}";
                 return $"{version.Major}.{version.Minor}.0";
             }
-            return "1.2.0";
+            return "1.2.1";
         }
 
         public async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)

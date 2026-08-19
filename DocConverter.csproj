@@ -24,4 +24,12 @@
     <PackageReference Include="MicrosoftOfficeCore" Version="15.0.0" />
   </ItemGroup>
 
+  <!-- DocMasterPro alt dizini (eski versiyon) — derlemeye dahil etme -->
+  <ItemGroup>
+    <Compile Remove="DocMasterPro\**" />
+    <Page Remove="DocMasterPro\**" />
+    <EmbeddedResource Remove="DocMasterPro\**" />
+    <None Remove="DocMasterPro\**" />
+  </ItemGroup>
+
 </Project>
