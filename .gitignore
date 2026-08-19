@@ -33,6 +33,8 @@ publish-single/
 publish-fd/
 publish-velopack/
 Releases/
+artifacts/
+DocMasterPro/artifacts/
 *.exe
 *.pdb
 

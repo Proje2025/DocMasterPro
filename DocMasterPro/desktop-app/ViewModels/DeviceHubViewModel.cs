@@ -20,6 +20,7 @@ namespace DocConverter.ViewModels
         private readonly DriverManagementService _driverService = new();
         private readonly ScannerService _scannerService = new();
         private readonly PrinterService _printerService = new();
+        private readonly BlankPageDetector _blankDetector = new();
 
         private CancellationTokenSource? _cts;
 
@@ -40,17 +41,17 @@ namespace DocConverter.ViewModels
         private string statusMessage = "Cihazlar taranmaya hazır.";
 
         [ObservableProperty]
-        private int selectedHubTabIndex = 0; // 0 = Cihazlar, 1 = Tarayıcı Stüdyosu, 2 = Yazıcı Stüdyosu
+        private int selectedHubTabIndex = 0; // 0 = Cihazlar, 1 = Tarayıcı Stüdyosu, 2 = Yazıcı Stüdyosu, 3 = Boş Sayfa & Ayarlar
 
         // ==================== Manuel Ağ Cihazı Ekleme ====================
         [ObservableProperty]
-        private string manualIpAddress = "192.168.1.100";
+        private string manualIpAddress = string.Empty;
 
         [ObservableProperty]
         private int manualPort = 9100;
 
         [ObservableProperty]
-        private string manualDeviceName = "Ricoh SP 4510SF (Ağ)";
+        private string manualDeviceName = string.Empty;
 
         // ==================== Tarayıcı Stüdyosu ====================
         [ObservableProperty]
@@ -77,6 +78,13 @@ namespace DocConverter.ViewModels
 
         [ObservableProperty]
         private PrintJobOptions printOptions = new();
+
+        // ==================== Boş Sayfa Temizleme & Ayarlar ====================
+        [ObservableProperty]
+        private string cleanPdfSourcePath = string.Empty;
+
+        [ObservableProperty]
+        private double blankPageSensitivity = 98.5;
 
         public DeviceHubViewModel()
         {
@@ -214,21 +222,22 @@ namespace DocConverter.ViewModels
             try
             {
                 bool portOpen = await DeviceDiscoveryService.IsPortOpenAsync(ManualIpAddress, ManualPort, 1000, CancellationToken.None);
+                string devName = string.IsNullOrWhiteSpace(ManualDeviceName) ? $"Ağ Cihazı ({ManualIpAddress})" : ManualDeviceName.Trim();
 
                 var dev = new DeviceInfo
                 {
                     Id = $"NET_{ManualIpAddress.Replace(".", "_")}_{ManualPort}",
-                    Name = ManualDeviceName,
-                    Manufacturer = ManualDeviceName.Contains("Ricoh", StringComparison.OrdinalIgnoreCase) ? "Ricoh" : "Ağ Üreticisi",
-                    ModelName = ManualDeviceName,
-                    Type = ManualDeviceName.Contains("4510", StringComparison.OrdinalIgnoreCase) ? DeviceType.MultiFunction : DeviceType.Printer,
+                    Name = devName,
+                    Manufacturer = devName.Contains("Ricoh", StringComparison.OrdinalIgnoreCase) ? "Ricoh" : "Ağ Üreticisi",
+                    ModelName = devName,
+                    Type = devName.Contains("4510", StringComparison.OrdinalIgnoreCase) ? DeviceType.MultiFunction : DeviceType.Printer,
                     ConnectionType = DeviceConnectionType.NetworkIP,
-                    IpAddress = ManualIpAddress,
+                    IpAddress = ManualIpAddress.Trim(),
                     Port = ManualPort,
                     DriverState = portOpen ? DriverState.Ready : DriverState.Missing,
                     IsOnline = portOpen,
                     StatusMessage = portOpen ? "Ağ Bağlantısı Doğrulandı (Port 9100)" : "IP Adresine Ulaşılamadı",
-                    PresetModel = DeviceDiscoveryService.IdentifyPresetModelByName(ManualDeviceName)
+                    PresetModel = DeviceDiscoveryService.IdentifyPresetModelByName(devName)
                 };
 
                 var existing = Devices.FirstOrDefault(x => x.IpAddress == ManualIpAddress);
@@ -288,7 +297,7 @@ namespace DocConverter.ViewModels
             {
                 FileLogger.LogError("StartScanAsync Error", ex);
                 StatusMessage = $"Tarama hatası: {ex.Message}";
-                MessageBox.Show($"Tarama sırasında hata oluştu: {ex.Message}", "Tarama Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Tarama sırasında hata oluştu:\n{ex.Message}", "Tarama Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -491,6 +500,67 @@ namespace DocConverter.ViewModels
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        // ==================== Boş Sayfa Temizleme & Hızlı Araçlar ====================
+        [RelayCommand]
+        public void SelectCleanPdfFile()
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Boş Sayfaları Temizlenecek PDF'i Seçin",
+                Filter = "PDF Dosyaları (*.pdf)|*.pdf"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                CleanPdfSourcePath = dlg.FileName;
+            }
+        }
+
+        [RelayCommand]
+        public async Task CleanBlankPagesFromPdfAsync()
+        {
+            if (string.IsNullOrEmpty(CleanPdfSourcePath) || !File.Exists(CleanPdfSourcePath))
+            {
+                MessageBox.Show("Lütfen geçerli bir PDF dosyası seçin.", "Uyarı", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dlg = new SaveFileDialog
+            {
+                Title = "Temizlenmiş PDF'i Kaydet",
+                Filter = "PDF Dosyası (*.pdf)|*.pdf",
+                FileName = Path.GetFileNameWithoutExtension(CleanPdfSourcePath) + "_temiz.pdf"
+            };
+
+            if (dlg.ShowDialog() != true) return;
+
+            IsBusy = true;
+            ScanProgress = 0;
+            StatusMessage = "Boş sayfalar tespit edilip ayıklanıyor...";
+
+            try
+            {
+                var progressReporter = new Progress<int>(pct => ScanProgress = pct);
+                var (outPath, removed, total) = await _blankDetector.RemoveBlankPagesFromPdfAsync(
+                    CleanPdfSourcePath, dlg.FileName, BlankPageSensitivity, progressReporter);
+
+                StatusMessage = $"Temizleme tamamlandı: {total} sayfadan {removed} boş sayfa silindi.";
+                MessageBox.Show(
+                    $"İşlem tamamlandı!\n\nToplam Sayfa: {total}\nSilinen Boş Sayfa: {removed}\nKalan Sayfa: {total - removed}\n\nKaydedilen dosya:\n{dlg.FileName}",
+                    "Boş Sayfalar Temizlendi", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("CleanBlankPagesFromPdfAsync Error", ex);
+                MessageBox.Show($"Temizleme hatası: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                IsBusy = false;
+                ScanProgress = 100;
             }
         }
     }

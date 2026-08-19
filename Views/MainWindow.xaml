@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:DocConverter.ViewModels"
         xmlns:conv="clr-namespace:DocConverter.Converters"
-        Title="DocMaster Pro — Tüm Dosya Dönüştürme İşlemleri"
-        Height="700" Width="1000"
-        MinHeight="600" MinWidth="900"
+        Title="DocMaster Pro — Tüm Dosya Dönüştürme, Tarayıcı ve Yazıcı Merkezi"
+        Height="760" Width="1080"
+        MinHeight="650" MinWidth="950"
         AllowDrop="True"
         WindowStartupLocation="CenterScreen">
 
@@ -81,8 +81,8 @@
     </Style>
 
     <Style x:Key="TabHeaderStyle" TargetType="TabItem">
-      <Setter Property="Padding" Value="20,10"/>
-      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="FontSize" Value="13"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
@@ -117,7 +117,12 @@
   </Window.Resources>
 
   <Grid>
-    <TabControl x:Name="MainTabs" Margin="8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <TabControl x:Name="MainTabs" Grid.Row="0" Margin="8">
       <!-- Tab 1: PDF Birleştirme -->
       <TabItem Header="📄 PDF Birleştir" Style="{StaticResource TabHeaderStyle}">
         <Grid Margin="12">
@@ -128,7 +133,7 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
 
-          <TextBlock Grid.Row="0" Text="PDF dosyalarını tek bir dosyada birleştirin (sürükle-bırak ile sıralayabilirsiniz)"
+          <TextBlock Grid.Row="0" Text="PDF ve diğer dosyaları tek bir PDF'te birleştirin (sürükle-bırak ile sıralayabilirsiniz)"
                      FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
 
           <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
@@ -181,7 +186,6 @@
             <TextBlock Text="{Binding SplitPdfPath}" VerticalAlignment="Center"
                        Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
                        MaxWidth="440" ToolTip="{Binding SplitPdfPath}"/>
-            <!-- Düzeltme #9: Seçili PDF'in toplam sayfa sayısını göster -->
             <TextBlock Text="{Binding SplitPdfPageCountText}" VerticalAlignment="Center"
                        Margin="8,0,0,0" Foreground="#4A90D9" FontWeight="SemiBold"/>
           </StackPanel>
@@ -427,10 +431,10 @@
                                   <Run Text="Sayfa "/><Run Text="{Binding PageNumber}"/>
                                   <Run Text=" — "/><Run Text="{Binding Info}"/>
                                 </TextBlock>
-                                <Button Grid.Column="1" Content="↻ 90° Döndür" FontSize="12"
+                                <Button Grid.Column="1" Content="↻ Döndür" FontSize="12"
                                         Command="{Binding DataContext.RotatePageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}"
-                                        ToolTip="Sayfayı 90° Döndür" Padding="10,4" Margin="4,0"
+                                        ToolTip="Seçili açı kadar döndür" Padding="10,4" Margin="4,0"
                                         Background="#E0E0E0" BorderThickness="0" Cursor="Hand"/>
                                 <Button Grid.Column="2" Content="✕ Sil" FontSize="12" Foreground="Red"
                                         Command="{Binding DataContext.DeletePageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -441,7 +445,7 @@
                             </Border>
 
                             <!-- Tam Sayfa Önizleme -->
-                            <Border Background="#FAFAFA" MinHeight="500" Margin="12">
+                            <Border Background="#FAFAFA" MinHeight="450" Margin="12">
                               <Image Source="{Binding Thumbnail}" Stretch="Uniform"
                                      RenderOptions.BitmapScalingMode="HighQuality"/>
                             </Border>
@@ -473,10 +477,10 @@
 
                 <Separator Margin="0,12"/>
 
-                <TextBlock Text="Toplu İşlemler" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Döndürme Açısı" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
 
                 <StackPanel Orientation="Horizontal" Margin="0,4">
-                  <TextBlock Text="Döndürme:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBlock Text="Açı:" VerticalAlignment="Center" Margin="0,0,8,0"/>
                   <ComboBox ItemsSource="{Binding RotationAngles}"
                             SelectedItem="{Binding SelectedRotation}"
                             Width="80"/>
@@ -489,7 +493,7 @@
 
                 <TextBlock Text="Filigran Ekle" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBox Text="{Binding WatermarkText, UpdateSourceTrigger=PropertyChanged}"
-                         Width="250" Height="30" Margin="0,4"
+                         Width="220" Height="30" Margin="0,4"
                          ToolTip="Filigran metni"/>
                 <Button Content="Filigran Uygula" Style="{StaticResource PrimaryButton}"
                         Command="{Binding AddWatermarkCommand}"
@@ -509,6 +513,372 @@
           </StackPanel>
         </Grid>
       </TabItem>
+
+      <!-- Tab 7: Yazıcı & Tarayıcı -->
+      <TabItem Header="🖨️ Yazıcı &amp; Tarayıcı" Style="{StaticResource TabHeaderStyle}">
+        <Grid Margin="12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Text="Doğrudan tarayıcıdan belge tarayın, tarananları PDF yapın veya belgelerinizi yazıcıya gönderin"
+                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+
+          <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="12"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- SOL: Tarayıcı Stüdyosu -->
+            <Border Grid.Column="0" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8" Background="#FAFAFA" Padding="12">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="*"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Tarayıcı Başlık & Seçim -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                  <TextBlock Text="📑 Tarayıcı &amp; Belge Tarama" FontSize="16" FontWeight="Bold" Foreground="#2A6496"/>
+                  
+                  <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Tarayıcı:" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableScanners}"
+                              SelectedItem="{Binding SelectedScanner}"
+                              DisplayMemberPath="DisplayName" Margin="0,0,8,0"/>
+                    <Button Grid.Column="2" Content="🔄 Yenile" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding RefreshDevicesCommand}" MinWidth="70" Padding="8,4"/>
+                  </Grid>
+                </StackPanel>
+
+                <!-- Tarama Parametreleri -->
+                <Border Grid.Row="1" Background="#F0F4F8" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+                  <Grid>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto"/>
+                      <RowDefinition Height="Auto"/>
+                      <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Çözünürlük:" VerticalAlignment="Center" Margin="0,0,6,6"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding ScanResolutions}"
+                              SelectedItem="{Binding ScanOptions.Resolution}" Margin="0,0,8,6"/>
+
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Renk:" VerticalAlignment="Center" Margin="0,0,6,6"/>
+                    <ComboBox Grid.Row="0" Grid.Column="3" ItemsSource="{Binding ScanColorModes}"
+                              SelectedItem="{Binding ScanOptions.ColorMode}" Margin="0,0,0,6"/>
+
+                    <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                              Content="Çift Taraflı Tarama (Duplex)"
+                              IsChecked="{Binding DuplexScanEnabled}"
+                              FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,4,0,4"/>
+
+                    <CheckBox Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2"
+                              Content="Boş Sayfaları Otomatik Sil"
+                              IsChecked="{Binding AutoDeleteBlankPages}"
+                              FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,4,0,4"/>
+
+                    <Button Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
+                            Content="▶ Taramayı Başlat" Style="{StaticResource PrimaryButton}"
+                            Command="{Binding StartScanCommand}"
+                            Background="#28A745" HorizontalAlignment="Stretch" Margin="0,6,0,0" Height="36"/>
+                  </Grid>
+                </Border>
+
+                <!-- Taranan Sayfalar Galerisi -->
+                <Border Grid.Row="2" BorderBrush="#DDD" BorderThickness="1" CornerRadius="6" Background="White">
+                  <Grid>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto"/>
+                      <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Background="#F8F9FA" Padding="8,4" CornerRadius="6,6,0,0">
+                      <Grid>
+                        <TextBlock Text="Taranan Sayfalar" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                          <Button Content="↻ 90°" Style="{StaticResource SecondaryButton}"
+                                  Command="{Binding RotateScannedPageCommand}" MinWidth="50" Padding="6,2" ToolTip="Seçili sayfayı döndür"/>
+                          <Button Content="Sil" Style="{StaticResource SecondaryButton}"
+                                  Command="{Binding DeleteScannedPageCommand}" MinWidth="50" Padding="6,2" ToolTip="Seçili sayfayı sil"/>
+                          <Button Content="Temizle" Style="{StaticResource SecondaryButton}"
+                                  Command="{Binding ClearScannedPagesCommand}" MinWidth="60" Padding="6,2"/>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+
+                    <ListView Grid.Row="1" ItemsSource="{Binding ScannedPages}"
+                              SelectedItem="{Binding SelectedScannedPage}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              BorderThickness="0" Margin="4">
+                      <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                      </ListView.ItemsPanel>
+                      <ListView.ItemTemplate>
+                        <DataTemplate>
+                          <Border BorderBrush="#CCC" BorderThickness="1" CornerRadius="4" Margin="4" Padding="4" Background="#FAFAFA" Width="140">
+                            <StackPanel>
+                              <Border Background="White" Height="140" Margin="0,0,0,4">
+                                <Image Source="{Binding PreviewImage}" Stretch="Uniform"/>
+                              </Border>
+                              <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                              <TextBlock Text="{Binding FileSizeFormatted}" Foreground="Gray" FontSize="10" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ListView.ItemTemplate>
+                    </ListView>
+                  </Grid>
+                </Border>
+
+                <!-- Tarananları PDF Kaydet -->
+                <Button Grid.Row="3" Content="💾 Tarananları PDF Olarak Kaydet" Style="{StaticResource PrimaryButton}"
+                        Command="{Binding SaveScannedToPdfCommand}"
+                        Background="#17A2B8" HorizontalAlignment="Stretch" Margin="0,8,0,0" Height="36"/>
+              </Grid>
+            </Border>
+
+            <!-- SAĞ: Yazıcı Merkezi -->
+            <Border Grid.Column="2" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8" Background="#FAFAFA" Padding="12">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Yazıcı Başlık & Seçim -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                  <TextBlock Text="🖨️ Yazıcı Yönetimi &amp; Yazdırma" FontSize="16" FontWeight="Bold" Foreground="#2A6496"/>
+
+                  <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Yazıcı:" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding AvailablePrinters}"
+                              SelectedItem="{Binding SelectedPrinter}"
+                              DisplayMemberPath="DisplayName"/>
+                  </Grid>
+                </StackPanel>
+
+                <!-- Yazdırma Parametreleri & İşlemler -->
+                <Border Grid.Row="1" Background="#F0F4F8" CornerRadius="6" Padding="12">
+                  <StackPanel>
+                    <TextBlock Text="Yazdırılacak Belge:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <Button Grid.Column="0" Content="Dosya Seç" Style="{StaticResource PrimaryButton}"
+                              Command="{Binding SelectPrintFileCommand}" Margin="0,0,8,0"/>
+                      <TextBlock Grid.Column="1" Text="{Binding SelectedPrintFilePath}"
+                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                 Foreground="#333" ToolTip="{Binding SelectedPrintFilePath}"/>
+                    </Grid>
+
+                    <Separator Margin="0,6,0,12"/>
+
+                    <Grid Margin="0,0,0,10">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+
+                      <TextBlock Grid.Row="0" Grid.Column="0" Text="Kopya Sayısı:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                      <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding PrintOptions.Copies, UpdateSourceTrigger=PropertyChanged}"
+                               Width="80" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+
+                      <TextBlock Grid.Row="1" Grid.Column="0" Text="Yönlendirme:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                      <ComboBox Grid.Row="1" Grid.Column="1" SelectedItem="{Binding PrintOptions.Orientation}"
+                                Width="140" HorizontalAlignment="Left" Margin="0,0,0,8">
+                        <ComboBoxItem Content="Dikey" IsSelected="True"/>
+                        <ComboBoxItem Content="Yatay"/>
+                      </ComboBox>
+
+                      <CheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Content="Çift Taraflı Yazdır (Duplex)"
+                                IsChecked="{Binding DuplexPrintEnabled}" FontWeight="SemiBold" Margin="0,4,0,4"/>
+
+                      <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="24,0,0,8"
+                                  Visibility="{Binding DuplexPrintEnabled, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Duplex Modu:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="Gray"/>
+                        <ComboBox ItemsSource="{Binding DuplexPrintModes}"
+                                  SelectedItem="{Binding PrintOptions.DuplexMode}"
+                                  Width="180"/>
+                      </StackPanel>
+
+                      <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Content="Sayfaya Sığdır (Fit to Page)"
+                                IsChecked="{Binding PrintOptions.FitToPage}" Margin="0,4,0,8"/>
+                    </Grid>
+
+                    <Separator Margin="0,8,0,16"/>
+
+                    <Button Content="🖨️ Belgeyi Yazdır" Style="{StaticResource PrimaryButton}"
+                            Command="{Binding PrintFileCommand}"
+                            Background="#007BFF" HorizontalAlignment="Stretch" Margin="0,4,0,8" Height="40"/>
+
+                    <Button Content="📄 Test Sayfası Yazdır" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding PrintTestPageCommand}"
+                            HorizontalAlignment="Stretch" Margin="0,4,0,0" Height="36"/>
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </Border>
+          </Grid>
+
+          <!-- Durum ve Progress Bar -->
+          <ProgressBar Grid.Row="2" Minimum="0" Maximum="100"
+                       Value="{Binding Progress}" Height="8" Margin="0,8,0,0"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+        </Grid>
+      </TabItem>
+
+      <!-- Tab 8: Ayarlar -->
+      <TabItem Header="⚙️ Ayarlar" Style="{StaticResource TabHeaderStyle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <Grid Margin="16">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="⚙️ Uygulama, Tarayıcı &amp; Yazıcı Ayarları" FontSize="18" FontWeight="Bold" Foreground="#333" Margin="0,0,0,16"/>
+
+            <!-- Tarama & Yazdırma & Boş Sayfa Ayarları Kartı -->
+            <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" CornerRadius="8" Background="#FAFAFA" Padding="16" Margin="0,0,0,16">
+              <StackPanel>
+                <TextBlock Text="Tarama, Yazdırma &amp; Boş Sayfa Tercihleri" FontSize="15" FontWeight="Bold" Foreground="#2A6496" Margin="0,0,0,12"/>
+
+                <CheckBox Content="Çift Taraflı Tarama (Duplex Scan)"
+                          IsChecked="{Binding DuplexScanEnabled}"
+                          FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBlock Text="ADF (Otomatik Belge Besleyici) destekli tarayıcılarda kağıdın her iki yüzünü otomatik olarak tarar."
+                           Foreground="Gray" Margin="24,0,0,12"/>
+
+                <CheckBox Content="Çift Taraflı Yazdırma (Duplex Print)"
+                          IsChecked="{Binding DuplexPrintEnabled}"
+                          FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBlock Text="Desteklenen yazıcılarda belgeleri varsayılan olarak arkalı-önlü çift taraflı yazdırır."
+                           Foreground="Gray" Margin="24,0,0,12"/>
+
+                <CheckBox Content="Boş Sayfaları Otomatik Olarak Sil"
+                          IsChecked="{Binding AutoDeleteBlankPages}"
+                          FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBlock Text="Taranan sayfalarda veya oluşturulan PDF'lerde tamamen boş/beyaz sayfaları piksel analizi ile tespit eder ve otomatik kaldırır."
+                           Foreground="Gray" Margin="24,0,0,12"/>
+
+                <TextBlock Text="Boş Sayfa Algılama Hassasiyeti (% Beyazlık Eşiği):" FontWeight="SemiBold" Margin="24,4,0,4"/>
+                <Grid Margin="24,0,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="300"/>
+                    <ColumnDefinition Width="80"/>
+                  </Grid.ColumnDefinitions>
+                  <Slider Grid.Column="0" Minimum="90" Maximum="99.9" Value="{Binding BlankPageSensitivity}"
+                          TickFrequency="1" IsSnapToTickEnabled="False" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" Text="{Binding BlankPageSensitivity, StringFormat='%{0:F1}'}"
+                             VerticalAlignment="Center" FontWeight="Bold" Margin="12,0,0,0"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <!-- Hızlı Araç: PDF'ten Boş Sayfa Temizleme -->
+            <Border Grid.Row="2" BorderBrush="#CCC" BorderThickness="1" CornerRadius="8" Background="#FAFAFA" Padding="16" Margin="0,0,0,16">
+              <StackPanel>
+                <TextBlock Text="🧹 Hızlı Araç: Mevcut Bir PDF'ten Boş Sayfaları Temizle" FontSize="15" FontWeight="Bold" Foreground="#2A6496" Margin="0,0,0,12"/>
+                <TextBlock Text="Mevcut herhangi bir PDF dosyasındaki tüm boş sayfaları otomatik olarak ayıklar ve temiz bir PDF oluşturur."
+                           Foreground="Gray" Margin="0,0,0,12"/>
+
+                <Grid Margin="0,0,0,12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <Button Grid.Column="0" Content="PDF Seç" Style="{StaticResource PrimaryButton}"
+                          Command="{Binding SelectCleanPdfFileCommand}" Margin="0,0,8,0"/>
+                  <TextBlock Grid.Column="1" Text="{Binding CleanPdfSourcePath}"
+                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                             Foreground="#333" ToolTip="{Binding CleanPdfSourcePath}"/>
+                  <Button Grid.Column="2" Content="Boş Sayfaları Temizle ve Kaydet" Style="{StaticResource PrimaryButton}"
+                          Command="{Binding CleanBlankPagesFromPdfCommand}"
+                          Background="#28A745" Margin="8,0,0,0"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <!-- Sistem & Servis Durumu -->
+            <Border Grid.Row="3" BorderBrush="#CCC" BorderThickness="1" CornerRadius="8" Background="#FAFAFA" Padding="16">
+              <StackPanel>
+                <TextBlock Text="ℹ️ Sistem &amp; Entegrasyon Durumu" FontSize="15" FontWeight="Bold" Foreground="#2A6496" Margin="0,0,0,12"/>
+
+                <Grid Margin="0,4,0,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="Ghostscript Durumu:" FontWeight="SemiBold"/>
+                  <TextBlock Grid.Column="1" Text="{Binding GhostscriptStatusText}" Foreground="#28A745" FontWeight="SemiBold"/>
+                </Grid>
+
+                <Grid Margin="0,4,0,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="Microsoft Office Durumu:" FontWeight="SemiBold"/>
+                  <TextBlock Grid.Column="1" Text="{Binding OfficeStatusText}" Foreground="#28A745" FontWeight="SemiBold"/>
+                </Grid>
+
+                <Grid Margin="0,4,0,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="Windows WIA Servisi:" FontWeight="SemiBold"/>
+                  <TextBlock Grid.Column="1" Text="✓ Windows Image Acquisition Aktif (Gerçek Donanım Modu)" Foreground="#28A745" FontWeight="SemiBold"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
+
+    <!-- Durum Çubuğu (Status Bar) -->
+    <StatusBar Grid.Row="1" Background="#E9ECEF" Padding="8,4">
+      <StatusBarItem>
+        <TextBlock Text="{Binding StatusMessage}" Foreground="#495057" FontWeight="SemiBold"/>
+      </StatusBarItem>
+    </StatusBar>
   </Grid>
 </Window>

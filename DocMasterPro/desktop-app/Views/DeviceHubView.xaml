@@ -283,7 +283,11 @@
                   <ComboBoxItem Content="⬛ 1-bit Siyah-Beyaz Metin" Tag="{x:Static models:ScanColorMode.BlackAndWhite}"/>
                 </ComboBox>
 
-                <!-- Otomatik Düzeltmeler -->
+                <!-- Otomatik Düzeltmeler & Boş Sayfa -->
+                <CheckBox Content="Boş Sayfaları Otomatik Olarak Sil"
+                          IsChecked="{Binding ScanOptions.RemoveBlankPages}"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,8"/>
                 <CheckBox Content="Otomatik eğrilik düzeltme (Deskew)"
                           IsChecked="{Binding ScanOptions.AutoDeskew}"
                           Margin="0,0,0,8"/>
@@ -526,6 +530,65 @@
             </StackPanel>
           </Border>
         </Grid>
+      </TabItem>
+
+      <!-- ==================== SEKME 4: BOŞ SAYFA VE SİSTEM ARAÇLARI ==================== -->
+      <TabItem Header="⚙️ Boş Sayfa &amp; Sistem Araçları" FontSize="14" FontWeight="SemiBold">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <Grid Margin="12,16">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Hızlı PDF Boş Sayfa Temizleme Kartı -->
+            <Border Grid.Row="0" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,0,0,16">
+              <StackPanel>
+                <TextBlock Text="🧹 Mevcut Bir PDF'ten Boş Sayfaları Temizle" FontSize="17" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,8"/>
+                <TextBlock Text="Mevcut herhangi bir PDF dosyasındaki tüm boş/beyaz sayfaları piksel yoğunluğu analiziyle tespit edip ayıklar ve yeni temiz bir PDF üretir."
+                           FontSize="13" Foreground="#64748B" Margin="0,0,0,16"/>
+
+                <Grid Margin="0,0,0,14">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+
+                  <Button Grid.Column="0" Content="PDF Seç..." Style="{StaticResource SecondaryActionBtn}"
+                          Command="{Binding SelectCleanPdfFileCommand}" Margin="0,0,10,0"/>
+                  <TextBox Grid.Column="1" Text="{Binding CleanPdfSourcePath}" IsReadOnly="True" Padding="8,6" VerticalAlignment="Center"/>
+                  <Button Grid.Column="2" Content="🧹 Boş Sayfaları Temizle ve Kaydet"
+                          Style="{StaticResource SuccessActionBtn}"
+                          Command="{Binding CleanBlankPagesFromPdfCommand}" Margin="10,0,0,0"/>
+                </Grid>
+
+                <TextBlock Text="Boş Sayfa Algılama Hassasiyeti (% Beyazlık Oranı):" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,4,0,4"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="320"/>
+                    <ColumnDefinition Width="80"/>
+                  </Grid.ColumnDefinitions>
+                  <Slider Grid.Column="0" Minimum="90" Maximum="99.9" Value="{Binding BlankPageSensitivity}" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" Text="{Binding BlankPageSensitivity, StringFormat='%{0:F1}'}" FontWeight="Bold" Foreground="#2563EB" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <!-- Donanım ve Çift Taraflı Özellikleri Bilgilendirme -->
+            <Border Grid.Row="1" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20">
+              <StackPanel>
+                <TextBlock Text="ℹ️ Donanım &amp; Çift Taraflı (Duplex) Desteği" FontSize="17" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,12"/>
+                <TextBlock Text="• Çift Taraflı Tarama: Fujitsu fi-6230 veya WIA ADF tarayıcınızda 'ADF Çift Yüz (Duplex)' seçildiğinde kağıdın her iki yüzü otomatik taranır."
+                           FontSize="13" Foreground="#475569" Margin="0,0,0,6"/>
+                <TextBlock Text="• Boş Sayfa Filtresi: Tarama sırasında veya PDF dışa aktarımında arkası boş sayfalar stüdyoya eklenmeden otomatik ayıklanır."
+                           FontSize="13" Foreground="#475569" Margin="0,0,0,6"/>
+                <TextBlock Text="• Çift Taraflı Yazdırma: Ricoh SP 4510SF ve Windows Spooler yazıcılarında Uzun Kenar (Kitapçık) veya Kısa Kenar (Takvim) modlarında otomatik arkalı-önlü baskı yapılır."
+                           FontSize="13" Foreground="#475569"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </ScrollViewer>
       </TabItem>
 
     </TabControl>

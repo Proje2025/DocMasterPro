@@ -13,7 +13,7 @@ namespace DocConverter.ViewModels
         public Action? OnNavigateToPrinterStudioRequested { get; set; }
 
         [ObservableProperty]
-        private string appVersion = "v1.2.1 Pro";
+        private string appVersion = "v1.2.2 Pro";
 
         [ObservableProperty]
         private int readyDevicesCount = 0;

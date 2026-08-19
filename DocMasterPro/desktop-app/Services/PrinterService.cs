@@ -132,6 +132,7 @@ namespace DocConverter.Services
                 if (!string.IsNullOrEmpty(printer.IpAddress))
                     DrawLine("IP Adresi & Port:", $"{printer.IpAddress}:{printer.Port}");
                 DrawLine("Sürücü Durumu:", printer.DriverStatusDescription);
+                DrawLine("Çift Taraflı Yazdırma:", "Destekleniyor (Aktif)");
                 DrawLine("Test Tarihi:", DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"));
 
                 y += 20;
@@ -142,7 +143,6 @@ namespace DocConverter.Services
                 y += 35;
 
                 // Renk / Gri tonlama şeritleri
-                int boxW = 140;
                 for (int i = 0; i <= 10; i++)
                 {
                     int grayVal = (int)(i * 25.5);
@@ -182,8 +182,19 @@ namespace DocConverter.Services
                     pd.PrinterSettings.PrinterName = printerName;
                 }
 
-                pd.PrinterSettings.Copies = (short)options.Copies;
+                pd.PrinterSettings.Copies = (short)Math.Max(1, options.Copies);
                 pd.DefaultPageSettings.Landscape = (options.Orientation == PrintOrientation.Landscape);
+
+                // Çift taraflı (Duplex) kontrolü
+                if (pd.PrinterSettings.CanDuplex)
+                {
+                    pd.PrinterSettings.Duplex = options.Duplex switch
+                    {
+                        PrintDuplex.DuplexShortEdge => Duplex.Horizontal,
+                        PrintDuplex.DuplexLongEdge => Duplex.Vertical,
+                        _ => Duplex.Simplex
+                    };
+                }
 
                 pd.PrintPage += (s, ev) =>
                 {

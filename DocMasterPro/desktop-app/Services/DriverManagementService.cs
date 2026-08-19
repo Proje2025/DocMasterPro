@@ -23,9 +23,15 @@ namespace DocConverter.Services
 
     public class DriverManagementService
     {
-        private static readonly string SavedDevicesFile = Path.Combine(
+        private static string _savedDevicesFile = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "DocMasterPro", "saved_devices.json");
+
+        public static string SavedDevicesFile
+        {
+            get => _savedDevicesFile;
+            set => _savedDevicesFile = value;
+        }
 
         /// <summary>
         /// Cihazın sürücü ve hazır olma durumunu detaylı inceler
