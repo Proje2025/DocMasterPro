@@ -80,7 +80,7 @@ namespace DocConverter.Services
             Type? deviceManagerType = Type.GetTypeFromProgID("WIA.DeviceManager");
             if (deviceManagerType == null)
             {
-                throw new InvalidOperationException("Windows WIA (Image Acquisition) servisi sistemde bulunamadı.");
+                throw new InvalidOperationException("Windows WIA (Windows Image Acquisition) servisi sistemde bulunamadı.");
             }
 
             dynamic? deviceManager = Activator.CreateInstance(deviceManagerType);
@@ -93,31 +93,49 @@ namespace DocConverter.Services
             dynamic? targetDeviceInfo = null;
 
             int count = (int)deviceInfos.Count;
+            var availableWiaNames = new List<string>();
+
             for (int i = 1; i <= count; i++)
             {
                 dynamic info = deviceInfos[i];
                 string id = (string)info.DeviceID;
                 string pName = (string)info.Properties["Name"].Value;
+                availableWiaNames.Add(pName);
 
                 if (id == scanner.SerialOrHardwareId ||
                     pName.Contains(scanner.Name, StringComparison.OrdinalIgnoreCase) ||
                     (!string.IsNullOrEmpty(scanner.ModelName) && pName.Contains(scanner.ModelName, StringComparison.OrdinalIgnoreCase)) ||
-                    (scanner.IsFujitsuSpecial && pName.Contains("6230", StringComparison.OrdinalIgnoreCase)))
+                    (scanner.IsFujitsuSpecial && (pName.Contains("6230", StringComparison.OrdinalIgnoreCase) || pName.Contains("Fujitsu", StringComparison.OrdinalIgnoreCase))) ||
+                    (scanner.IsRicohSpecial && (pName.Contains("4510", StringComparison.OrdinalIgnoreCase) || pName.Contains("Ricoh", StringComparison.OrdinalIgnoreCase))))
                 {
                     targetDeviceInfo = info;
                     break;
                 }
             }
 
-            if (targetDeviceInfo == null && count > 0)
-            {
-                // Fallback to first available scanner if not exact match
-                targetDeviceInfo = deviceInfos[1];
-            }
-
             if (targetDeviceInfo == null)
             {
-                throw new InvalidOperationException("Sistemde aktif bir WIA tarayıcı cihazı tespit edilemedi.");
+                if (count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Windows'ta kayıtlı hiçbir WIA tarayıcı cihazı bulunamadı.\n\n" +
+                        $"'{scanner.Name}' cihazını tarayıcı olarak kullanabilmek için:\n" +
+                        "1. Tarayıcının USB veya ağ kablosunun takılı ve açık olduğunu kontrol edin.\n" +
+                        "2. Cihazın Windows WIA veya Network TWAIN sürücüsünün kurulu olduğundan emin olun.\n" +
+                        "3. Çok fonksiyonlu Ricoh veya Fujitsu cihazınız için 'Windows Tarama Penceresini Aç' seçeneğini kullanabilirsiniz.");
+                }
+
+                if (scanner.Type == DeviceType.Scanner)
+                {
+                    targetDeviceInfo = deviceInfos[1];
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"'{scanner.Name}' aygıtı bir tarayıcı (WIA) olarak tanınamadı.\n\n" +
+                        $"Sistemdeki mevcut aktif tarayıcılar:\n• {string.Join("\n• ", availableWiaNames)}\n\n" +
+                        "Lütfen listeden geçerli bir tarayıcı seçin veya 'Windows Tarama Penceresini Aç' butonunu kullanın.");
+                }
             }
 
             dynamic device = targetDeviceInfo.Connect();
@@ -203,6 +221,58 @@ namespace DocConverter.Services
             }
 
             return scannedPages.Count > 0;
+        }
+
+        /// <summary>
+        /// Windows yerel tarama iletişim kutusunu (WIA Common Dialog) açarak doğrudan tarama yaptırır.
+        /// </summary>
+        public async Task<List<ScannedPageItem>> ScanViaWiaNativeDialogAsync(
+            ScanOptions options,
+            CancellationToken cancellationToken = default,
+            IProgress<string>? progress = null)
+        {
+            var scannedPages = new List<ScannedPageItem>();
+            string sessionFolder = Path.Combine(ScanTempDir, $"Scan_Native_{DateTime.Now:yyyyMMdd_HHmmss}");
+            Directory.CreateDirectory(sessionFolder);
+
+            progress?.Report("Windows yerel tarayıcı penceresi açılıyor...");
+
+            await Task.Run(() =>
+            {
+                Type? commonDialogType = Type.GetTypeFromProgID("WIA.CommonDialog");
+                if (commonDialogType == null)
+                {
+                    throw new InvalidOperationException("Windows WIA CommonDialog bileşeni sistemde bulunamadı.");
+                }
+
+                dynamic? commonDialog = Activator.CreateInstance(commonDialogType);
+                if (commonDialog == null)
+                {
+                    throw new InvalidOperationException("WIA CommonDialog başlatılamadı.");
+                }
+
+                // 1 = ScannerDeviceType, 1 = ColorIntent, 0 = MaximizeQuality, wiaFormatPNG
+                dynamic? imageFile = commonDialog.ShowAcquireImage(
+                    1, // WiaDeviceType.ScannerDeviceType
+                    options.ColorMode == ScanColorMode.BlackAndWhite ? 4 : (options.ColorMode == ScanColorMode.Grayscale ? 2 : 1),
+                    0,
+                    "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}",
+                    false,
+                    true,
+                    false);
+
+                if (imageFile != null)
+                {
+                    string pagePath = Path.Combine(sessionFolder, "native_page_001.png");
+                    if (File.Exists(pagePath)) File.Delete(pagePath);
+                    imageFile.SaveFile(pagePath);
+
+                    var pageItem = LoadScannedPageItem(pagePath, 1, (int)options.Resolution);
+                    scannedPages.Add(pageItem);
+                }
+            }, cancellationToken);
+
+            return scannedPages;
         }
 
         private static void ConfigureWiaItemProperties(dynamic item, dynamic device, ScanOptions options)

@@ -114,8 +114,8 @@ namespace DocConverter.Services
                     {
                         var readSettings = new MagickReadSettings
                         {
-                            FrameIndex = i,
-                            FrameCount = 1,
+                            FrameIndex = (uint)i,
+                            FrameCount = 1U,
                             Density = new Density(72)
                         };
 

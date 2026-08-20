@@ -84,13 +84,11 @@
               <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button Content="⚡ Cihazları Otomatik Tara"
                         Style="{StaticResource PrimaryActionBtn}"
-                        Command="{Binding DiscoverDevicesCommand}"
-                        CommandParameter="{x:Null}"
+                        Command="{Binding DiscoverDevicesQuickCommand}"
                         Margin="0,0,8,0"/>
                 <Button Content="🌐 Tam Ağ Taraması (IP/Subnet)"
                         Style="{StaticResource SecondaryActionBtn}"
-                        Command="{Binding DiscoverDevicesCommand}"
-                        CommandParameter="{x:Null}"
+                        Command="{Binding DiscoverDevicesFullCommand}"
                         Margin="0,0,8,0"/>
               </StackPanel>
             </Grid>
@@ -249,8 +247,17 @@
                 <TextBlock Text="Tarayıcı Cihazı:" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,4"/>
                 <ComboBox ItemsSource="{Binding Devices}"
                           SelectedItem="{Binding SelectedScanner}"
-                          DisplayMemberPath="Name"
-                          Padding="8,6" Margin="0,0,0,14"/>
+                          Padding="8,6" Margin="0,0,0,14">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding TypeIcon}" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding ConnectionDescription, StringFormat=' ({0})'}" Foreground="Gray" FontSize="11" Margin="4,0,0,0"/>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
 
                 <!-- Kaynak (ADF / Flatbed) -->
                 <TextBlock Text="Belge Kaynağı:" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,4"/>
@@ -300,6 +307,13 @@
                         Style="{StaticResource SuccessActionBtn}"
                         Command="{Binding StartScanCommand}"
                         HorizontalAlignment="Stretch" Margin="0,0,0,8" Height="42" FontSize="14"/>
+
+                <!-- Windows Native WIA Tarama Butonu -->
+                <Button Content="🪟 Windows Tarama Penceresini Aç (WIA)"
+                        Style="{StaticResource SecondaryActionBtn}"
+                        Command="{Binding OpenWiaNativeScanDialogCommand}"
+                        HorizontalAlignment="Stretch" Margin="0,0,0,8" Height="36" FontSize="12"
+                        ToolTip="Ricoh, Fujitsu ve bağlı tüm tarayıcılar için Windows resmi tarama arayüzünü açar"/>
 
                 <Button Content="🗑️ Sayfaları Temizle"
                         Style="{StaticResource SecondaryActionBtn}"
@@ -431,8 +445,17 @@
                 <TextBlock Text="Hedef Yazıcı:" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,4"/>
                 <ComboBox ItemsSource="{Binding Devices}"
                           SelectedItem="{Binding SelectedPrinter}"
-                          DisplayMemberPath="Name"
-                          Padding="8,6" Margin="0,0,0,14"/>
+                          Padding="8,6" Margin="0,0,0,14">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding TypeIcon}" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding ConnectionDescription, StringFormat=' ({0})'}" Foreground="Gray" FontSize="11" Margin="4,0,0,0"/>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
 
                 <!-- Yazdırılacak Dosya -->
                 <TextBlock Text="Yazdırılacak Belge:" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,4"/>

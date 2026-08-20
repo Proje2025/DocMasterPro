@@ -105,8 +105,8 @@ namespace DocConverter.Services
                         // Her sayfa için ayrı bir MagickImageCollection kullan
                         var settings = new MagickReadSettings
                         {
-                            FrameIndex = i,
-                            FrameCount = 1
+                            FrameIndex = (uint)i,
+                            FrameCount = 1U
                         };
 
                         using var images = new MagickImageCollection();

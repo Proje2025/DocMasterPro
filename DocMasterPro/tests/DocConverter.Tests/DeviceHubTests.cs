@@ -246,5 +246,39 @@ namespace DocConverter.Tests
                 if (File.Exists(tempPdf)) File.Delete(tempPdf);
             }
         }
+
+        [Fact]
+        public void PrinterService_ResolveWindowsPrinterName_ShouldResolveCorrectly()
+        {
+            var dev = new DeviceInfo
+            {
+                Name = "Ricoh SP 4510SF Network MFP",
+                Manufacturer = "Ricoh",
+                ModelName = "SP 4510SF",
+                Type = DeviceType.MultiFunction,
+                ConnectionType = DeviceConnectionType.NetworkIP,
+                IpAddress = "192.168.1.150",
+                Port = 9100
+            };
+
+            string resolved = PrinterService.ResolveWindowsPrinterName(dev);
+            resolved.Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Fact]
+        public async Task DeviceHubViewModel_DiscoveryCommands_ShouldExecuteWithoutError()
+        {
+            var vm = new DeviceHubViewModel(autoLoad: false);
+
+            // Quick Discovery Command
+            await vm.DiscoverDevicesQuickCommand.ExecuteAsync(null);
+            vm.IsBusy.Should().BeFalse();
+            vm.StatusMessage.Should().Contain("Tarama tamamlandı");
+
+            // Full Discovery Command
+            await vm.DiscoverDevicesFullCommand.ExecuteAsync(null);
+            vm.IsBusy.Should().BeFalse();
+            vm.StatusMessage.Should().Contain("Tarama tamamlandı");
+        }
     }
 }

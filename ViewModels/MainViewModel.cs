@@ -797,7 +797,7 @@ namespace DocConverter.ViewModels
 
                 using var thumb = new MagickImage(ms);
                 thumb.FilterType = FilterType.Lanczos;
-                thumb.Resize(maxWidth, 0);
+                thumb.Resize((uint)maxWidth, 0U);
                 thumb.Format = MagickFormat.Png;
 
                 var bytes = thumb.ToByteArray();

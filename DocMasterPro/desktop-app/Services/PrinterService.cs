@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.IO;
-using System.Net.Sockets;
+using System.Linq;
+using System.Management;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DocConverter.Models;
+using PdfiumViewer.Core;
+using PdfiumViewer.Enums;
+using Image = System.Drawing.Image;
 
 namespace DocConverter.Services
 {
@@ -23,8 +25,11 @@ namespace DocConverter.Services
 
     public class PrinterService
     {
+        private readonly OfficeConverterService _officeConverter = new();
+
         /// <summary>
-        /// Seçili yazıcıya belge (PDF, Resim, Doküman) yazdırır
+        /// Seçili yazıcıya belge (PDF, Resim, Word/Office Dokümanı) yazdırır.
+        /// Windows GDI Spooler ve PdfiumViewer render motorunu kullanarak PCL/EMF standartlarında temiz çıktı üretir.
         /// </summary>
         public async Task<PrintResult> PrintDocumentAsync(
             DeviceInfo printer,
@@ -33,43 +38,60 @@ namespace DocConverter.Services
             CancellationToken cancellationToken = default,
             IProgress<string>? progress = null)
         {
-            if (!File.Exists(filePath))
+            if (printer == null)
             {
-                return new PrintResult { Success = false, Message = "Yazdırılacak dosya bulunamadı." };
+                return new PrintResult { Success = false, Message = "Lütfen bir hedef yazıcı seçin." };
             }
 
-            progress?.Report($"{printer.Name} cihazına gönderiliyor ({Path.GetFileName(filePath)})...");
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                return new PrintResult { Success = false, Message = "Yazdırılacak dosya bulunamadı: " + filePath };
+            }
+
+            string actualPrinterName = ResolveWindowsPrinterName(printer);
+            progress?.Report($"{actualPrinterName} yazıcısına gönderiliyor ({Path.GetFileName(filePath)})...");
 
             return await Task.Run(async () =>
             {
                 try
                 {
-                    // 1. Eğer doğrudan TCP/IP RAW Ağ Yazıcısı ise (örn. Ricoh SP 4510SF Port 9100)
-                    if (printer.ConnectionType == DeviceConnectionType.NetworkIP &&
-                        !string.IsNullOrEmpty(printer.IpAddress) &&
-                        printer.Port > 0)
+                    string ext = Path.GetExtension(filePath).ToLowerInvariant();
+
+                    // 1. Resim Dosyaları (.png, .jpg, .jpeg, .bmp, .tif, .tiff, .gif)
+                    if (ext is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".tif" or ".tiff" or ".gif")
                     {
-                        progress?.Report($"Doğrudan TCP/IP RAW üzerinden aktarılıyor ({printer.IpAddress}:{printer.Port})...");
-                        bool rawSent = await SendRawFileToNetworkPrinterAsync(printer.IpAddress, printer.Port, filePath, cancellationToken);
-                        if (rawSent)
+                        return PrintImageFile(actualPrinterName, filePath, options);
+                    }
+
+                    // 2. Office Dosyaları (.docx, .doc, .xlsx, .xls, .pptx, .ppt, .txt, .rtf)
+                    if (ext is ".docx" or ".doc" or ".xlsx" or ".xls" or ".pptx" or ".ppt" or ".txt" or ".rtf")
+                    {
+                        progress?.Report("Belge yazdırma için PDF formatına dönüştürülüyor...");
+                        string tempPdf = Path.Combine(Path.GetTempPath(), $"DocMaster_Print_{Guid.NewGuid():N}.pdf");
+                        try
                         {
-                            return new PrintResult
+                            if (ext is ".docx" or ".doc")
+                                await _officeConverter.ConvertWordToPdfAsync(filePath, tempPdf, cancellationToken);
+                            else if (ext is ".xlsx" or ".xls")
+                                await _officeConverter.ConvertExcelToPdfAsync(filePath, tempPdf, cancellationToken);
+                            else if (ext is ".pptx" or ".ppt")
+                                await _officeConverter.ConvertPowerPointToPdfAsync(filePath, tempPdf, cancellationToken);
+                            else
+                                await _officeConverter.ConvertTxtToPdfAsync(filePath, tempPdf, cancellationToken);
+
+                            if (File.Exists(tempPdf))
                             {
-                                Success = true,
-                                Message = $"{Path.GetFileName(filePath)} başarıyla {printer.Name} ({printer.IpAddress}) cihazına aktarıldı."
-                            };
+                                return PrintPdfFile(actualPrinterName, tempPdf, options, progress);
+                            }
+                        }
+                        finally
+                        {
+                            try { if (File.Exists(tempPdf)) File.Delete(tempPdf); } catch { }
                         }
                     }
 
-                    // 2. Resim dosyası ise PrintDocument ile bas
-                    string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tif" || ext == ".tiff")
-                    {
-                        return PrintImageFile(printer.Name, filePath, options);
-                    }
-
-                    // 3. PDF veya diğer belgeler için Windows ShellExecute Print
-                    return PrintViaWindowsShell(printer.Name, filePath);
+                    // 3. PDF Dosyaları (veya varsayılan PDF olarak işleme)
+                    return PrintPdfFile(actualPrinterName, filePath, options, progress);
                 }
                 catch (Exception ex)
                 {
@@ -84,7 +106,189 @@ namespace DocConverter.Services
         }
 
         /// <summary>
-        /// Yazıcıya test sayfası gönderir
+        /// PDF dosyasını yüksek çözünürlüklü sayfa render ederek Windows GDI Yazdırma Kuyruğuna (Spooler) basar.
+        /// </summary>
+        public static PrintResult PrintPdfFile(
+            string printerName,
+            string pdfPath,
+            PrintJobOptions options,
+            IProgress<string>? progress = null)
+        {
+            try
+            {
+                using var pd = new PrintDocument();
+                if (!string.IsNullOrEmpty(printerName))
+                {
+                    pd.PrinterSettings.PrinterName = printerName;
+                }
+
+                if (!pd.PrinterSettings.IsValid)
+                {
+                    return new PrintResult
+                    {
+                        Success = false,
+                        Message = $"'{printerName}' yazıcısı Windows sisteminde geçerli bir yazıcı kuyruğu olarak bulunamadı. Lütfen Windows Aygıtlar ve Yazıcılar bölümünden yazıcınızın adını doğrulayın."
+                    };
+                }
+
+                pd.PrinterSettings.Copies = (short)Math.Max(1, options.Copies);
+                pd.DefaultPageSettings.Landscape = (options.Orientation == PrintOrientation.Landscape);
+
+                // Çift taraflı (Duplex) yazdırma ayarları
+                if (pd.PrinterSettings.CanDuplex)
+                {
+                    pd.PrinterSettings.Duplex = options.Duplex switch
+                    {
+                        PrintDuplex.DuplexShortEdge => Duplex.Horizontal,
+                        PrintDuplex.DuplexLongEdge => Duplex.Vertical,
+                        _ => Duplex.Simplex
+                    };
+                }
+
+                using var pdfDoc = PdfDocument.Load(pdfPath);
+                int totalPages = pdfDoc.PageCount;
+                int currentPageIndex = 0;
+
+                pd.PrintPage += (s, ev) =>
+                {
+                    if (ev.Graphics == null || currentPageIndex >= totalPages)
+                    {
+                        ev.HasMorePages = false;
+                        return;
+                    }
+
+                    progress?.Report($"Sayfa {currentPageIndex + 1} / {totalPages} yazıcıya gönderiliyor...");
+
+                    var printableArea = ev.MarginBounds;
+                    float printDpi = 300f;
+
+                    var pageSize = pdfDoc.PageSizes[currentPageIndex] is SizeF sz ? sz : new SizeF(595, 842);
+                    int renderWidth = Math.Max(1, (int)Math.Round(pageSize.Width * (printDpi / 72.0f)));
+                    int renderHeight = Math.Max(1, (int)Math.Round(pageSize.Height * (printDpi / 72.0f)));
+
+                    using var pageImage = pdfDoc.Render(
+                        currentPageIndex,
+                        renderWidth,
+                        renderHeight,
+                        printDpi,
+                        printDpi,
+                        PdfRenderFlags.Annotations);
+
+                    if (options.FitToPage)
+                    {
+                        float scale = Math.Min((float)printableArea.Width / pageImage.Width, (float)printableArea.Height / pageImage.Height);
+                        int drawW = Math.Max(1, (int)(pageImage.Width * scale));
+                        int drawH = Math.Max(1, (int)(pageImage.Height * scale));
+                        int drawX = printableArea.Left + (printableArea.Width - drawW) / 2;
+                        int drawY = printableArea.Top + (printableArea.Height - drawH) / 2;
+                        ev.Graphics.DrawImage(pageImage, drawX, drawY, drawW, drawH);
+                    }
+                    else
+                    {
+                        ev.Graphics.DrawImage(pageImage, printableArea.Left, printableArea.Top);
+                    }
+
+                    currentPageIndex++;
+                    ev.HasMorePages = (currentPageIndex < totalPages);
+                };
+
+                pd.Print();
+
+                return new PrintResult
+                {
+                    Success = true,
+                    PagesSent = totalPages,
+                    Message = $"{Path.GetFileName(pdfPath)} ({totalPages} sayfa) başarıyla {printerName} yazıcısına gönderildi."
+                };
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("PrintPdfFile Error", ex);
+                return new PrintResult
+                {
+                    Success = false,
+                    Message = $"PDF yazdırma hatası: {ex.Message}"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Resim dosyasını PrintDocument ile temiz basar
+        /// </summary>
+        public static PrintResult PrintImageFile(string printerName, string imagePath, PrintJobOptions options)
+        {
+            try
+            {
+                using var pd = new PrintDocument();
+                if (!string.IsNullOrEmpty(printerName))
+                {
+                    pd.PrinterSettings.PrinterName = printerName;
+                }
+
+                if (!pd.PrinterSettings.IsValid)
+                {
+                    return new PrintResult
+                    {
+                        Success = false,
+                        Message = $"'{printerName}' yazıcısı Windows sisteminde bulunamadı."
+                    };
+                }
+
+                pd.PrinterSettings.Copies = (short)Math.Max(1, options.Copies);
+                pd.DefaultPageSettings.Landscape = (options.Orientation == PrintOrientation.Landscape);
+
+                if (pd.PrinterSettings.CanDuplex)
+                {
+                    pd.PrinterSettings.Duplex = options.Duplex switch
+                    {
+                        PrintDuplex.DuplexShortEdge => Duplex.Horizontal,
+                        PrintDuplex.DuplexLongEdge => Duplex.Vertical,
+                        _ => Duplex.Simplex
+                    };
+                }
+
+                pd.PrintPage += (s, ev) =>
+                {
+                    if (ev.Graphics == null) return;
+
+                    using var img = Image.FromFile(imagePath);
+                    var marginBounds = ev.MarginBounds;
+
+                    if (options.FitToPage)
+                    {
+                        float scale = Math.Min((float)marginBounds.Width / img.Width, (float)marginBounds.Height / img.Height);
+                        int w = Math.Max(1, (int)(img.Width * scale));
+                        int h = Math.Max(1, (int)(img.Height * scale));
+                        int x = marginBounds.Left + (marginBounds.Width - w) / 2;
+                        int y = marginBounds.Top + (marginBounds.Height - h) / 2;
+                        ev.Graphics.DrawImage(img, x, y, w, h);
+                    }
+                    else
+                    {
+                        ev.Graphics.DrawImage(img, marginBounds.Left, marginBounds.Top);
+                    }
+
+                    ev.HasMorePages = false;
+                };
+
+                pd.Print();
+
+                return new PrintResult
+                {
+                    Success = true,
+                    PagesSent = 1,
+                    Message = $"{Path.GetFileName(imagePath)} yazıcıya başarıyla gönderildi."
+                };
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("PrintImageFile Error", ex);
+                return new PrintResult { Success = false, Message = $"Resim yazdırma hatası: {ex.Message}" };
+            }
+        }
+
+        /// <summary>
+        /// Yazıcıya profesyonel test sayfası gönderir
         /// </summary>
         public async Task<PrintResult> PrintTestPageAsync(
             DeviceInfo printer,
@@ -105,8 +309,8 @@ namespace DocConverter.Services
                 g.DrawRectangle(borderPen, 30, 30, 1540, 2140);
 
                 using var headerBrush = new SolidBrush(Color.FromArgb(16, 24, 39));
-                using var titleFont = new Font("Segoe UI", 26, FontStyle.Bold);
-                using var subTitleFont = new Font("Segoe UI", 16, FontStyle.Bold);
+                using var titleFont = new Font("Segoe UI", 24, FontStyle.Bold);
+                using var subTitleFont = new Font("Segoe UI", 15, FontStyle.Bold);
                 using var textFont = new Font("Segoe UI", 12);
                 using var smallFont = new Font("Segoe UI", 10);
 
@@ -133,7 +337,7 @@ namespace DocConverter.Services
                     DrawLine("IP Adresi & Port:", $"{printer.IpAddress}:{printer.Port}");
                 DrawLine("Sürücü Durumu:", printer.DriverStatusDescription);
                 DrawLine("Çift Taraflı Yazdırma:", "Destekleniyor (Aktif)");
-                DrawLine("Test Tarihi:", DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"));
+                DrawLine("Test Tarihi:", DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture));
 
                 y += 20;
                 g.DrawLine(grayPen, 60, y, 1500, y);
@@ -168,125 +372,74 @@ namespace DocConverter.Services
                 bmp.Save(tempTestImage, System.Drawing.Imaging.ImageFormat.Png);
             }, cancellationToken);
 
-            var options = new PrintJobOptions { Copies = 1, Orientation = PrintOrientation.Portrait };
+            var options = new PrintJobOptions { Copies = 1, Orientation = PrintOrientation.Portrait, FitToPage = true };
             return await PrintDocumentAsync(printer, tempTestImage, options, cancellationToken, progress);
         }
 
-        private static PrintResult PrintImageFile(string printerName, string imagePath, PrintJobOptions options)
+        /// <summary>
+        /// DeviceInfo nesnesine karşılık gelen geçerli Windows Spooler Yazıcı Adını bulur.
+        /// </summary>
+        public static string ResolveWindowsPrinterName(DeviceInfo printer)
         {
-            try
+            if (printer == null) return string.Empty;
+
+            var installed = PrinterSettings.InstalledPrinters.Cast<string>().ToList();
+
+            // 1. Doğrudan kurulu yazıcı adı ile birebir eşleşme
+            var exact = installed.FirstOrDefault(p => p.Equals(printer.Name, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(exact)) return exact;
+
+            // 2. IP adresine göre kurulu yazıcı portlarından eşleşme
+            if (!string.IsNullOrEmpty(printer.IpAddress) && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                using var pd = new PrintDocument();
-                if (!string.IsNullOrEmpty(printerName))
+                try
                 {
-                    pd.PrinterSettings.PrinterName = printerName;
-                }
-
-                pd.PrinterSettings.Copies = (short)Math.Max(1, options.Copies);
-                pd.DefaultPageSettings.Landscape = (options.Orientation == PrintOrientation.Landscape);
-
-                // Çift taraflı (Duplex) kontrolü
-                if (pd.PrinterSettings.CanDuplex)
-                {
-                    pd.PrinterSettings.Duplex = options.Duplex switch
+                    using var searcher = new ManagementObjectSearcher("SELECT Name, PortName FROM Win32_Printer");
+                    using var collection = searcher.Get();
+                    foreach (ManagementObject p in collection)
                     {
-                        PrintDuplex.DuplexShortEdge => Duplex.Horizontal,
-                        PrintDuplex.DuplexLongEdge => Duplex.Vertical,
-                        _ => Duplex.Simplex
-                    };
-                }
-
-                pd.PrintPage += (s, ev) =>
-                {
-                    if (ev.Graphics == null) return;
-
-                    using var img = Image.FromFile(imagePath);
-                    var marginBounds = ev.MarginBounds;
-
-                    if (options.FitToPage)
-                    {
-                        float scale = Math.Min((float)marginBounds.Width / img.Width, (float)marginBounds.Height / img.Height);
-                        int w = (int)(img.Width * scale);
-                        int h = (int)(img.Height * scale);
-                        int x = marginBounds.Left + (marginBounds.Width - w) / 2;
-                        int y = marginBounds.Top + (marginBounds.Height - h) / 2;
-                        ev.Graphics.DrawImage(img, x, y, w, h);
+                        string pName = p["Name"]?.ToString() ?? "";
+                        string port = p["PortName"]?.ToString() ?? "";
+                        if (port.Contains(printer.IpAddress, StringComparison.OrdinalIgnoreCase) ||
+                            pName.Contains(printer.IpAddress, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return pName;
+                        }
                     }
-                    else
-                    {
-                        ev.Graphics.DrawImage(img, marginBounds.Left, marginBounds.Top);
-                    }
-
-                    ev.HasMorePages = false;
-                };
-
-                pd.Print();
-
-                return new PrintResult
-                {
-                    Success = true,
-                    Message = $"{Path.GetFileName(imagePath)} yazıcıya başarıyla gönderildi."
-                };
-            }
-            catch (Exception ex)
-            {
-                FileLogger.LogError("PrintImageFile Error", ex);
-                return new PrintResult { Success = false, Message = $"Resim yazdırma hatası: {ex.Message}" };
-            }
-        }
-
-        private static PrintResult PrintViaWindowsShell(string printerName, string filePath)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = filePath,
-                    Verb = "print",
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    UseShellExecute = true
-                };
-
-                if (!string.IsNullOrEmpty(printerName))
-                {
-                    // PrintTo allows specifying printer
-                    psi.Verb = "printto";
-                    psi.Arguments = $"\"{printerName}\"";
                 }
-
-                using var proc = Process.Start(psi);
-                return new PrintResult
+                catch
                 {
-                    Success = true,
-                    Message = $"{Path.GetFileName(filePath)} yazdırma kuyruğuna aktarıldı."
-                };
+                    // Fallback
+                }
             }
-            catch (Exception ex)
-            {
-                FileLogger.LogError("PrintViaWindowsShell Error", ex);
-                return new PrintResult { Success = false, Message = $"Windows Spooler yazdırma hatası: {ex.Message}" };
-            }
-        }
 
-        private static async Task<bool> SendRawFileToNetworkPrinterAsync(string ip, int port, string filePath, CancellationToken cancellationToken)
-        {
+            // 3. Ricoh veya özel model adına göre eşleşme
+            if (printer.IsRicohSpecial || printer.Name.Contains("Ricoh", StringComparison.OrdinalIgnoreCase))
+            {
+                var ricohMatch = installed.FirstOrDefault(p =>
+                    p.Contains("Ricoh", StringComparison.OrdinalIgnoreCase) ||
+                    p.Contains("4510", StringComparison.OrdinalIgnoreCase) ||
+                    p.Contains("Aficio", StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrEmpty(ricohMatch)) return ricohMatch;
+            }
+
+            // 4. İçeren isim araması
+            var partial = installed.FirstOrDefault(p => p.Contains(printer.Name, StringComparison.OrdinalIgnoreCase) ||
+                                                        (!string.IsNullOrEmpty(printer.ModelName) && p.Contains(printer.ModelName, StringComparison.OrdinalIgnoreCase)));
+            if (!string.IsNullOrEmpty(partial)) return partial;
+
+            // 5. Varsayılan sistem yazıcısı
             try
             {
-                using var client = new TcpClient();
-                await client.ConnectAsync(ip, port, cancellationToken);
-                using var stream = client.GetStream();
-                using var fileStream = File.OpenRead(filePath);
+                var settings = new PrinterSettings();
+                if (!string.IsNullOrEmpty(settings.PrinterName) && installed.Contains(settings.PrinterName))
+                    return settings.PrinterName;
+            }
+            catch { }
 
-                await fileStream.CopyToAsync(stream, cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                FileLogger.LogError($"SendRawFileToNetworkPrinterAsync ({ip}:{port}) Error", ex);
-                return false;
-            }
+            // 6. İlk kurulu yazıcı veya printer.Name
+            return installed.FirstOrDefault() ?? printer.Name;
         }
     }
 }

@@ -86,10 +86,13 @@ namespace DocConverter.ViewModels
         [ObservableProperty]
         private double blankPageSensitivity = 98.5;
 
-        public DeviceHubViewModel()
+        public DeviceHubViewModel(bool autoLoad = true)
         {
-            // İlk açılışta kaydedilmiş cihazları yükle
-            _ = LoadSavedDevicesAsync();
+            if (autoLoad)
+            {
+                // İlk açılışta kaydedilmiş cihazları yükle
+                _ = LoadSavedDevicesAsync();
+            }
         }
 
         public async Task LoadSavedDevicesAsync()
@@ -113,25 +116,41 @@ namespace DocConverter.ViewModels
 
         private void UpdateSelectedPointers()
         {
-            if (SelectedScanner == null)
+            if (SelectedScanner == null || !Devices.Contains(SelectedScanner))
             {
-                SelectedScanner = Devices.FirstOrDefault(d => d.IsFujitsuSpecial || d.Type == DeviceType.Scanner);
+                SelectedScanner = Devices.FirstOrDefault(d => d.IsFujitsuSpecial || d.Type == DeviceType.Scanner)
+                                  ?? Devices.FirstOrDefault(d => d.Type == DeviceType.MultiFunction)
+                                  ?? Devices.FirstOrDefault();
             }
 
-            if (SelectedPrinter == null)
+            if (SelectedPrinter == null || !Devices.Contains(SelectedPrinter))
             {
-                SelectedPrinter = Devices.FirstOrDefault(d => d.IsRicohSpecial || d.IsDefault || d.Type == DeviceType.Printer);
+                SelectedPrinter = Devices.FirstOrDefault(d => d.IsRicohSpecial || (d.IsDefault && d.Type != DeviceType.Scanner))
+                                  ?? Devices.FirstOrDefault(d => d.Type == DeviceType.Printer || d.Type == DeviceType.MultiFunction)
+                                  ?? Devices.FirstOrDefault();
             }
         }
 
         // ==================== Cihaz Keşfi ve Sürücü Kurulumu ====================
+        [RelayCommand]
+        public async Task DiscoverDevicesQuickAsync()
+        {
+            await DiscoverDevicesAsync(false);
+        }
+
+        [RelayCommand]
+        public async Task DiscoverDevicesFullAsync()
+        {
+            await DiscoverDevicesAsync(true);
+        }
+
         [RelayCommand]
         public async Task DiscoverDevicesAsync(bool scanFullNetwork = true)
         {
             if (IsBusy) return;
 
             IsBusy = true;
-            StatusMessage = "Cihazlar taranıyor...";
+            StatusMessage = scanFullNetwork ? "Yerel ve ağdaki tüm aygıtlar taranıyor..." : "Bağlı cihazlar taranıyor...";
             _cts = new CancellationTokenSource();
 
             var progress = new Progress<string>(msg => StatusMessage = msg);
@@ -297,6 +316,47 @@ namespace DocConverter.ViewModels
             {
                 FileLogger.LogError("StartScanAsync Error", ex);
                 StatusMessage = $"Tarama hatası: {ex.Message}";
+                MessageBox.Show($"Tarama sırasında hata oluştu:\n{ex.Message}", "Tarama Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                IsBusy = false;
+                ScanProgress = 100;
+            }
+        }
+
+        [RelayCommand]
+        public async Task OpenWiaNativeScanDialogAsync()
+        {
+            IsBusy = true;
+            ScanProgress = 0;
+            StatusMessage = "Windows yerel tarayıcı penceresi açılıyor...";
+            _cts = new CancellationTokenSource();
+            var progress = new Progress<string>(msg => StatusMessage = msg);
+
+            try
+            {
+                var newPages = await _scannerService.ScanViaWiaNativeDialogAsync(ScanOptions, _cts.Token, progress);
+                foreach (var p in newPages)
+                {
+                    p.PageNumber = ScannedPages.Count + 1;
+                    ScannedPages.Add(p);
+                }
+
+                if (ScannedPages.Count > 0)
+                {
+                    SelectedScannedPage = ScannedPages.Last();
+                    StatusMessage = $"Windows yerel tarama tamamlandı: {newPages.Count} sayfa eklendi.";
+                }
+                else
+                {
+                    StatusMessage = "Tarama iptal edildi veya görüntü alınamadı.";
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("OpenWiaNativeScanDialogAsync Error", ex);
+                StatusMessage = $"Yerel tarama hatası: {ex.Message}";
                 MessageBox.Show($"Tarama sırasında hata oluştu:\n{ex.Message}", "Tarama Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally

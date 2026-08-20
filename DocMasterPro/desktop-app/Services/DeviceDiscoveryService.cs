@@ -365,28 +365,48 @@ namespace DocConverter.Services
             try
             {
                 var localIps = GetLocalIPv4Addresses();
-                if (!localIps.Any()) return list;
+                if (!localIps.Any())
+                {
+                    progress?.Report("Aktif yerel ağ bağlantısı bulunamadı.");
+                    return list;
+                }
 
-                var baseIpParts = localIps.First().Split('.');
-                if (baseIpParts.Length != 4) return list;
+                var subnets = localIps.Select(ip =>
+                {
+                    var parts = ip.Split('.');
+                    return parts.Length == 4 ? $"{parts[0]}.{parts[1]}.{parts[2]}." : null;
+                }).Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
 
-                string subnetPrefix = $"{baseIpParts[0]}.{baseIpParts[1]}.{baseIpParts[2]}.";
+                var allCandidateIps = new List<string>();
+                foreach (var subnet in subnets)
+                {
+                    for (int i = 1; i <= 254; i++)
+                    {
+                        allCandidateIps.Add($"{subnet}{i}");
+                    }
+                }
 
-                // En yaygın yazıcı IP aralıklarını (örn. 1..50 ve 100..150 ve 200..254) asenkron tara
-                var candidateHostIps = Enumerable.Range(1, 254).Select(i => $"{subnetPrefix}{i}").ToList();
+                int totalIps = allCandidateIps.Count;
+                int scannedCount = 0;
+                using var semaphore = new SemaphoreSlim(40); // 40 paralel sorgu
 
-                using var semaphore = new SemaphoreSlim(30); // 30 paralel sorgu
-                var tasks = candidateHostIps.Select(async ip =>
+                var tasks = allCandidateIps.Select(async ip =>
                 {
                     await semaphore.WaitAsync(cancellationToken);
                     try
                     {
                         if (cancellationToken.IsCancellationRequested) return null;
 
-                        // Port 9100 (RAW JetDirect) veya 515 (LPR) veya 631 (IPP) açık mı?
-                        bool isRawPortOpen = await IsPortOpenAsync(ip, 9100, 350, cancellationToken);
-                        bool isIppPortOpen = !isRawPortOpen && await IsPortOpenAsync(ip, 631, 350, cancellationToken);
-                        bool isLprPortOpen = !isRawPortOpen && !isIppPortOpen && await IsPortOpenAsync(ip, 515, 350, cancellationToken);
+                        // Port 9100 (RAW JetDirect), 631 (IPP) veya 515 (LPR)
+                        bool isRawPortOpen = await IsPortOpenAsync(ip, 9100, 300, cancellationToken);
+                        bool isIppPortOpen = !isRawPortOpen && await IsPortOpenAsync(ip, 631, 300, cancellationToken);
+                        bool isLprPortOpen = !isRawPortOpen && !isIppPortOpen && await IsPortOpenAsync(ip, 515, 300, cancellationToken);
+
+                        int current = Interlocked.Increment(ref scannedCount);
+                        if (current % 15 == 0 || current == totalIps)
+                        {
+                            progress?.Report($"Ağ taranıyor... ({current}/{totalIps})");
+                        }
 
                         if (isRawPortOpen || isIppPortOpen || isLprPortOpen)
                         {
