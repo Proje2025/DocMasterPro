@@ -3,8 +3,12 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using ImageMagick;
+using DocConverter.Helpers;
+using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
+using PdfiumViewer.Enums;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
+using PdfSharpDoc = PdfSharp.Pdf.PdfDocument;
 using PdfSharp.Drawing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -35,7 +39,7 @@ namespace DocConverter.Services
             {
                 using var imageSharp = SixLabors.ImageSharp.Image.Load(imagePath);
 
-                using var document = new PdfDocument();
+                using var document = new PdfSharpDoc();
                 document.PageLayout = PdfPageLayout.SinglePage;
 
                 var page = document.AddPage();
@@ -62,7 +66,7 @@ namespace DocConverter.Services
 
         /// <summary>
         /// PDF'in her sayfasını ayrı görüntü dosyasına dönüştürür.
-        /// Paralel işleme ve CancellationToken desteği sunar.
+        /// Google PDFium motoru kullanılarak yüksek performanslı ve harici kurulum gerektirmeksizin çalışır.
         /// </summary>
         public async Task ConvertPdfToImagesAsync(
             string pdfPath,
@@ -71,14 +75,9 @@ namespace DocConverter.Services
             CancellationToken cancellationToken = default,
             IProgress<int>? progress = null)
         {
-            if (!IsGhostscriptAvailable())
+            if (string.IsNullOrWhiteSpace(pdfPath) || !File.Exists(pdfPath))
             {
-                throw new Exception(
-                    "PDF görüntüye dönüştürülemedi.\n\n" +
-                    "Bu işlem için Ghostscript gereklidir.\n" +
-                    "Lütfen Ghostscript'i yükleyin:\n" +
-                    "https://ghostscript.com/releases/gsdnld.html\n\n" +
-                    "Kurulumdan sonra uygulamayı yeniden başlatın.");
+                throw new FileNotFoundException($"PDF dosyası bulunamadı: {pdfPath}");
             }
 
             Directory.CreateDirectory(outputDir);
@@ -86,81 +85,88 @@ namespace DocConverter.Services
 
             await Task.Run(() =>
             {
-                using var images = new MagickImageCollection();
+                PdfiumNativeLoader.EnsureLoaded();
 
-                try
-                {
-                    images.Read(pdfPath);
-                }
-                catch (MagickCorruptImageErrorException ex)
-                {
-                    throw new Exception($"PDF dosyası bozuk veya okunamıyor: {ex.Message}", ex);
-                }
-                catch (Exception ex) when (ex.Message.Contains("PDF") || ex.Message.Contains("ghostscript") ||
-                                           ex.Message.Contains("delegate") || ex.Message.Contains("gswin"))
-                {
-                    throw new Exception(
-                        "PDF görüntüye dönüştürülemedi.\n\n" +
-                        "Ghostscript yüklü değil veya düzgün yapılandırılmamış.\n\n" +
-                        "Çözüm için:\n" +
-                        "1. https://ghostscript.com/releases/gsdnld.html adresine gidin\n" +
-                        "2. 'Ghostscript 10.04.0 for Windows (64 bit)' indirin\n" +
-                        "3. Kurulumu tamamlayın (PATH'e eklendiğinden emin olun)\n" +
-                        "4. Bu uygulamayı yeniden başlatın\n\n" +
-                        "Teknik detay: " + ex.Message, ex);
-                }
+                using var pdfDoc = PdfiumDoc.Load(pdfPath);
+                int total = pdfDoc.PageCount;
 
-                if (images.Count == 0)
+                if (total == 0)
                 {
                     throw new Exception("PDF dosyasında hiç sayfa bulunamadı veya sayfalar okunamadı.");
                 }
 
-                int completed = 0;
-                int total = images.Count;
-                var lockObj = new object();
+                const float dpi = 300f;
 
-                Parallel.For(
-                    0,
-                    total,
-                    new ParallelOptions
-                    {
-                        MaxDegreeOfParallelism = MaxDegreeOfParallelism,
-                        CancellationToken = cancellationToken
-                    },
-                    index =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
+                for (int index = 0; index < total; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                        var image = images[index];
+                    var pageSize = pdfDoc.PageSizes[index] is System.Drawing.SizeF sz ? sz : new System.Drawing.SizeF(595, 842);
+                    int renderWidth = Math.Max(1, (int)Math.Round(pageSize.Width * (dpi / 72.0f)));
+                    int renderHeight = Math.Max(1, (int)Math.Round(pageSize.Height * (dpi / 72.0f)));
 
-                        image.Format = format.ToLowerInvariant() switch
-                        {
-                            "jpg" or "jpeg" => MagickFormat.Jpeg,
-                            "png" => MagickFormat.Png,
-                            "bmp" => MagickFormat.Bmp,
-                            "gif" => MagickFormat.Gif,
-                            "tiff" or "tif" => MagickFormat.Tiff,
-                            "webp" => MagickFormat.WebP,
-                            _ => MagickFormat.Png
-                        };
+                    using var pageImage = pdfDoc.Render(
+                        index,
+                        renderWidth,
+                        renderHeight,
+                        dpi,
+                        dpi,
+                        PdfRenderFlags.Annotations);
 
-                        string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{index + 1}.{format}");
-                        image.Write(outputPath);
+                    string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{index + 1}.{format.ToLowerInvariant()}");
+                    SaveRenderedImage(pageImage, outputPath, format);
 
-                        if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
-                        {
-                            throw new Exception($"Sayfa {index + 1} kaydedilemedi: {outputPath}");
-                        }
-
-                        int current;
-                        lock (lockObj)
-                        {
-                            completed++;
-                            current = completed;
-                        }
-                        progress?.Report((current * 100) / total);
-                    });
+                    progress?.Report(((index + 1) * 100) / total);
+                }
             }, cancellationToken);
+        }
+
+        private static void SaveRenderedImage(System.Drawing.Image image, string outputPath, string format)
+        {
+            string ext = format.ToLowerInvariant().TrimStart('.');
+            switch (ext)
+            {
+                case "jpg" or "jpeg":
+                    image.Save(outputPath, System.Drawing.Imaging.ImageFormat.Jpeg);
+                    break;
+                case "png":
+                    image.Save(outputPath, System.Drawing.Imaging.ImageFormat.Png);
+                    break;
+                case "bmp":
+                    image.Save(outputPath, System.Drawing.Imaging.ImageFormat.Bmp);
+                    break;
+                case "gif":
+                    image.Save(outputPath, System.Drawing.Imaging.ImageFormat.Gif);
+                    break;
+                case "tiff" or "tif":
+                    image.Save(outputPath, System.Drawing.Imaging.ImageFormat.Tiff);
+                    break;
+                case "webp":
+                    using (var ms = new MemoryStream())
+                    {
+                        image.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                        ms.Position = 0;
+                        using var sharpImg = SixLabors.ImageSharp.Image.Load(ms);
+                        sharpImg.SaveAsWebp(outputPath);
+                    }
+                    break;
+                default:
+                    image.Save(outputPath, System.Drawing.Imaging.ImageFormat.Png);
+                    break;
+            }
+
+            if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+            {
+                throw new IOException($"Sayfa kaydedilemedi: {outputPath}");
+            }
+        }
+
+        /// <summary>
+        /// PDF'in her sayfasını ayrı görüntü dosyasına dönüştürür (ilerleme raporlamalı overload).
+        /// </summary>
+        public Task ConvertPdfToImagesAsync(string pdfPath, string outputDir, string format, IProgress<int>? progress)
+        {
+            return ConvertPdfToImagesAsync(pdfPath, outputDir, format, CancellationToken.None, progress);
         }
 
         /// <summary>
@@ -173,32 +179,11 @@ namespace DocConverter.Services
         }
 
         /// <summary>
-        /// Ghostscript'in sistemde yüklü olup olmadığını kontrol eder.
+        /// Geriye uyumluluk için tutulmaktadır. PDF dönüştürme artık yerel PDFium ile çalıştığı için Ghostscript gerektirmez.
         /// </summary>
-        private bool IsGhostscriptAvailable()
+        public bool IsGhostscriptAvailable()
         {
-            try
-            {
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "gswin64c.exe",
-                    Arguments = "-version",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null) return false;
-
-                process.WaitForExit(3000);
-                return process.ExitCode == 0;
-            }
-            catch
-            {
-                return false;
-            }
+            return true;
         }
 
         /// <summary>

@@ -9,9 +9,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>1.2.4</Version>
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="PdfiumViewer.WPF" Version="1.0.6" />
+    <PackageReference Include="PdfiumViewer.Native.x86.v8-xfa" Version="2018.4.8.256" PrivateAssets="all" />
+    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" PrivateAssets="all" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.16.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

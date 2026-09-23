@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using DocConverter.Helpers;
 using DocConverter.Models;
 using PdfiumViewer.Core;
 using PdfiumViewer.Enums;
@@ -19,8 +20,6 @@ public class PdfViewerService
 {
     private const double ScreenDpi = 96d;
     private const double PdfPointDpi = 72d;
-    private static readonly object NativeLoadLock = new();
-    private static IntPtr pdfiumHandle;
 
     public async Task<PdfRenderedPage> RenderPageAsync(
         string pdfPath,
@@ -237,27 +236,7 @@ public class PdfViewerService
 
     private static void EnsurePdfiumLoaded()
     {
-        if (pdfiumHandle != IntPtr.Zero)
-            return;
-
-        lock (NativeLoadLock)
-        {
-            if (pdfiumHandle != IntPtr.Zero)
-                return;
-
-            string architectureFolder = Environment.Is64BitProcess ? "x64" : "x86";
-            string nativePath = Path.Combine(AppContext.BaseDirectory, architectureFolder, "pdfium.dll");
-            if (!File.Exists(nativePath))
-                nativePath = Path.Combine(AppContext.BaseDirectory, "pdfium.dll");
-
-            if (!File.Exists(nativePath))
-            {
-                throw new DllNotFoundException(
-                    $"PDFium native runtime bulunamadi: {nativePath}. PdfiumViewer native paketlerinin cikti klasorune kopyalandigini dogrulayin.");
-            }
-
-            pdfiumHandle = NativeLibrary.Load(nativePath);
-        }
+        PdfiumNativeLoader.EnsureLoaded();
     }
 
     private static SizeF GetPageSize(PdfDocument document, int pageIndex)

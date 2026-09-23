@@ -1,8 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
-using ImageMagick;
+using DocConverter.Helpers;
+using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
+using PdfiumViewer.Enums;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using SixLabors.ImageSharp;
@@ -13,129 +15,115 @@ namespace DocConverter.Services
     public class BlankPageDetector
     {
         /// <summary>
-        /// Verilen görüntü dosyasının boş (beyaz/tek renk) olup olmadığını kontrol eder.
-        /// threshold: Boşluk eşiği (%90 - %100 arası). Varsayılan %98.5
+        /// Resim dosyasının boş/beyaz olup olmadığını piksel yoğunluğu analiziyle kontrol eder.
         /// </summary>
-        public bool IsImageBlank(string imagePath, double threshold = 98.5)
+        /// <param name="imagePath">Analiz edilecek resmin yolu</param>
+        /// <param name="whiteThresholdPercent">Sayfanın boş kabul edilmesi için minimum beyaz/açık piksel oranı (örn: 98.5)</param>
+        /// <param name="luminanceThreshold">Beyaz/arka plan sayılması için minimum parlaklık (0-255, varsayılan 240)</param>
+        /// <returns>Sayfa boş ise true, dolu ise false</returns>
+        public bool IsImageBlank(string imagePath, double whiteThresholdPercent = 98.5, byte luminanceThreshold = 240)
         {
             if (!File.Exists(imagePath)) return false;
 
             try
             {
                 using var image = Image.Load<Rgb24>(imagePath);
-                return IsImageSharpBlank(image, threshold);
+                return IsImageSharpBlank(image, whiteThresholdPercent, luminanceThreshold);
             }
             catch (Exception ex)
             {
-                FileLogger.LogError($"IsImageBlank Error ({imagePath})", ex);
+                FileLogger.LogError($"IsImageBlank ({imagePath})", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// ImageSharp Rgb24 nesnesi üzerinde piksel analizi yapar.
+        /// Bir ImageSharp resminin piksellerini analiz ederek boş olup olmadığını belirler.
         /// </summary>
-        public bool IsImageSharpBlank(Image<Rgb24> image, double threshold = 98.5)
+        private static bool IsImageSharpBlank(Image<Rgb24> image, double whiteThresholdPercent, byte luminanceThreshold)
         {
-            try
+            int totalPixels = image.Width * image.Height;
+            if (totalPixels == 0) return true;
+
+            long whitePixelCount = 0;
+
+            image.ProcessPixelRows(accessor =>
             {
-                int width = image.Width;
-                int height = image.Height;
-                long totalPixels = (long)width * height;
-                if (totalPixels == 0) return true;
-
-                // Performans için örnekleme adımı
-                int step = 1;
-                if (totalPixels > 2_000_000) step = 3;
-                else if (totalPixels > 500_000) step = 2;
-
-                long sampledPixels = 0;
-                long whiteOrNearWhitePixels = 0;
-                const byte whiteThreshold = 240; // RGB >= 240
-
-                image.ProcessPixelRows(accessor =>
+                for (int y = 0; y < accessor.Height; y++)
                 {
-                    for (int y = 0; y < accessor.Height; y += step)
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++)
                     {
-                        var pixelRow = accessor.GetRowSpan(y);
-                        for (int x = 0; x < accessor.Width; x += step)
+                        ref readonly var pixel = ref row[x];
+                        // Parlaklık / Gri ton hesaplama (BT.601 standardı)
+                        int luminance = (pixel.R * 299 + pixel.G * 587 + pixel.B * 114) / 1000;
+                        if (luminance >= luminanceThreshold)
                         {
-                            sampledPixels++;
-                            var pixel = pixelRow[x];
-
-                            if (pixel.R >= whiteThreshold && pixel.G >= whiteThreshold && pixel.B >= whiteThreshold)
-                            {
-                                whiteOrNearWhitePixels++;
-                            }
+                            whitePixelCount++;
                         }
                     }
-                });
+                }
+            });
 
-                if (sampledPixels == 0) return true;
-
-                double whiteRatio = (double)whiteOrNearWhitePixels / sampledPixels * 100.0;
-                return whiteRatio >= threshold;
-            }
-            catch (Exception ex)
-            {
-                FileLogger.LogError("IsImageSharpBlank Error", ex);
-                return false;
-            }
+            double whiteRatio = (double)whitePixelCount / totalPixels * 100.0;
+            return whiteRatio >= whiteThresholdPercent;
         }
 
         /// <summary>
-        /// PDF dosyasından boş sayfaları temizleyip yeni bir PDF olarak kaydeder.
-        /// Kaldırılan sayfa sayısını ve yeni dosya yolunu döndürür.
+        /// PDF dosyasındaki tüm boş sayfaları otomatik olarak ayıklar ve yeni bir PDF olarak kaydeder.
+        /// Google PDFium motoruyla sayfaları bellek içinde analiz eder; harici yazılım (Ghostscript) veya geçici disk dosyaları gerektirmez.
         /// </summary>
-        public async Task<(string OutputPath, int RemovedPagesCount, int TotalPages)> RemoveBlankPagesFromPdfAsync(
+        public async Task<(string OutputPath, int RemovedPages, int TotalOriginalPages)> RemoveBlankPagesFromPdfAsync(
             string inputPdfPath,
             string outputPdfPath,
-            double threshold = 98.5,
-            IProgress<int>? progress = null)
+            double whiteThresholdPercent = 98.5,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
         {
+            if (!File.Exists(inputPdfPath))
+                throw new FileNotFoundException("Kaynak PDF bulunamadı.", inputPdfPath);
+
+            int removedCount = 0;
+            int totalOriginalPages = 0;
+
             return await Task.Run(() =>
             {
-                if (!File.Exists(inputPdfPath))
-                    throw new FileNotFoundException("PDF dosyası bulunamadı", inputPdfPath);
+                PdfiumNativeLoader.EnsureLoaded();
 
-                using var sourceDoc = PdfReader.Open(inputPdfPath, PdfDocumentOpenMode.Import);
-                int totalPages = sourceDoc.PageCount;
-                if (totalPages == 0)
-                    throw new InvalidOperationException("PDF dosyasında sayfa bulunmuyor.");
+                using var pdfDoc = PdfiumDoc.Load(inputPdfPath);
+                totalOriginalPages = pdfDoc.PageCount;
 
-                using var targetDoc = new PdfDocument();
-                int removedCount = 0;
-
-                for (int i = 0; i < totalPages; i++)
+                if (totalOriginalPages == 0)
                 {
-                    bool isBlank = false;
+                    File.Copy(inputPdfPath, outputPdfPath, true);
+                    return (outputPdfPath, 0, 0);
+                }
 
+                var nonBlankPageIndices = new System.Collections.Generic.List<int>();
+
+                for (int i = 0; i < totalOriginalPages; i++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var pageSize = pdfDoc.PageSizes[i] is System.Drawing.SizeF sz ? sz : new System.Drawing.SizeF(595, 842);
+                    // Hızlı analiz için 100 DPI yeterlidir
+                    int renderWidth = Math.Max(1, (int)Math.Round(pageSize.Width * (100f / 72.0f)));
+                    int renderHeight = Math.Max(1, (int)Math.Round(pageSize.Height * (100f / 72.0f)));
+
+                    bool isBlank = false;
                     try
                     {
-                        var readSettings = new MagickReadSettings
-                        {
-                            FrameIndex = (uint)i,
-                            FrameCount = 1U,
-                            Density = new Density(72)
-                        };
+                        using var pageImage = pdfDoc.Render(i, renderWidth, renderHeight, 100f, 100f, PdfRenderFlags.None);
+                        using var ms = new MemoryStream();
+                        pageImage.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
+                        ms.Position = 0;
 
-                        using var images = new MagickImageCollection();
-                        images.Read(inputPdfPath, readSettings);
-
-                        if (images.Count > 0)
-                        {
-                            var img = images[0];
-                            using var ms = new MemoryStream();
-                            img.Write(ms, MagickFormat.Png);
-                            ms.Position = 0;
-
-                            using var sharpImg = Image.Load<Rgb24>(ms);
-                            isBlank = IsImageSharpBlank(sharpImg, threshold);
-                        }
+                        using var sharpImage = Image.Load<Rgb24>(ms);
+                        isBlank = IsImageSharpBlank(sharpImage, whiteThresholdPercent, 240);
                     }
                     catch (Exception ex)
                     {
-                        FileLogger.LogError($"RemoveBlankPages check page {i + 1}", ex);
+                        FileLogger.LogError($"BlankPageDetector sayfa {i + 1}", ex);
                         isBlank = false;
                     }
 
@@ -145,21 +133,38 @@ namespace DocConverter.Services
                     }
                     else
                     {
-                        targetDoc.AddPage(sourceDoc.Pages[i]);
+                        nonBlankPageIndices.Add(i);
                     }
 
-                    progress?.Report((i + 1) * 100 / totalPages);
+                    int pct = (int)((i + 1) * 80.0 / totalOriginalPages);
+                    progress?.Report(pct);
                 }
 
-                if (targetDoc.PageCount == 0 && totalPages > 0)
+                // Hiç dolu sayfa kalmadıysa ilk sayfayı koru
+                if (nonBlankPageIndices.Count == 0 && totalOriginalPages > 0)
                 {
-                    targetDoc.AddPage(sourceDoc.Pages[0]);
-                    removedCount = Math.Max(0, totalPages - 1);
+                    nonBlankPageIndices.Add(0);
+                    removedCount = Math.Max(0, totalOriginalPages - 1);
                 }
 
-                targetDoc.Save(outputPdfPath);
-                return (outputPdfPath, removedCount, totalPages);
-            });
+                // Seçilen sayfaları yeni PDF'e aktar
+                using (var sourceDoc = PdfReader.Open(inputPdfPath, PdfDocumentOpenMode.Import))
+                using (var outDoc = new PdfSharp.Pdf.PdfDocument())
+                {
+                    foreach (int idx in nonBlankPageIndices)
+                    {
+                        if (idx < sourceDoc.PageCount)
+                        {
+                            outDoc.AddPage(sourceDoc.Pages[idx]);
+                        }
+                    }
+
+                    outDoc.Save(outputPdfPath);
+                }
+
+                progress?.Report(100);
+                return (outputPdfPath, removedCount, totalOriginalPages);
+            }, cancellationToken);
         }
     }
 }

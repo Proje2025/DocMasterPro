@@ -13,6 +13,8 @@ using CommunityToolkit.Mvvm.Input;
 using DocConverter.Helpers;
 using DocConverter.Models;
 using DocConverter.Services;
+using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
+using PdfiumViewer.Enums;
 using ImageMagick;
 using Microsoft.Win32;
 using PdfSharp.Pdf;
@@ -30,7 +32,6 @@ namespace DocConverter.ViewModels
         private readonly SemaphoreSlim _previewRenderGate = new(1, 1);
         private CancellationTokenSource? _cts;
         private CancellationTokenSource? _previewLoadCts;
-        private bool _ghostscriptWarningShown;
 
         private const int PdfPreviewDensityDpi = 144;
         private const int PdfPreviewMaxWidth = 1200;
@@ -1021,24 +1022,13 @@ namespace DocConverter.ViewModels
                 IsBusy = true;
                 StatusMessage = "PDF yükleniyor...";
 
-                bool ghostscriptAvailable = IsGhostscriptAvailable();
-                var pages = await Task.Run(() => LoadPdfPageMetadata(pdfPath, ghostscriptAvailable, previewToken), previewToken);
+                var pages = await Task.Run(() => LoadPdfPageMetadata(pdfPath, canLoadPreview: true, previewToken), previewToken);
 
                 foreach (var page in pages)
                     PdfPages.Add(page);
 
                 if (selectedPageIndex is >= 0 && selectedPageIndex < PdfPages.Count)
                     SelectedPage = PdfPages[selectedPageIndex.Value];
-
-                if (!ghostscriptAvailable && !_ghostscriptWarningShown)
-                {
-                    _ghostscriptWarningShown = true;
-                    MessageBox.Show(
-                        "PDF sayfa önizlemeleri için Ghostscript önerilir.\n" +
-                        "Sayfa bilgileri gösteriliyor.\n\n" +
-                        "Önizleme için: https://ghostscript.com/releases/gsdnld.html",
-                        "Bilgi", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
             }
             catch (OperationCanceledException)
             {
@@ -1088,7 +1078,7 @@ namespace DocConverter.ViewModels
                     CanLoadPreview = canLoadPreview,
                     PreviewStatus = canLoadPreview
                         ? "Önizleme hazırlanıyor..."
-                        : "Önizleme için Ghostscript gerekli."
+                        : "Önizleme yüklenemedi."
                 });
             }
 
@@ -1157,37 +1147,50 @@ namespace DocConverter.ViewModels
             }
         }
 
-        private BitmapSource? RenderPdfPagePreview(string pdfPath, int pageIndex, CancellationToken cancellationToken)
+        private static BitmapSource? RenderPdfPagePreview(string pdfPath, int pageIndex, CancellationToken cancellationToken)
         {
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var settings = new MagickReadSettings
-                {
-                    Density = new Density(PdfPreviewDensityDpi),
-                    FrameIndex = (uint)pageIndex,
-                    FrameCount = 1
-                };
+                PdfiumNativeLoader.EnsureLoaded();
 
-                using var images = new MagickImageCollection();
-                images.Read(pdfPath, settings);
-
-                if (images.Count == 0)
+                using var pdfDoc = PdfiumDoc.Load(pdfPath);
+                if (pageIndex < 0 || pageIndex >= pdfDoc.PageCount)
                     return null;
 
-                var image = images[0];
-                image.FilterType = FilterType.Lanczos;
-                image.Quality = 90;
+                cancellationToken.ThrowIfCancellationRequested();
 
-                if (image.Width > PdfPreviewMaxWidth)
-                    image.Resize(PdfPreviewMaxWidth, 0);
+                var pageSize = pdfDoc.PageSizes[pageIndex] is System.Drawing.SizeF sz ? sz : new System.Drawing.SizeF(595, 842);
+
+                double scale = (double)PdfPreviewDensityDpi / 72.0;
+                int width = Math.Max(1, (int)Math.Round(pageSize.Width * scale));
+                int height = Math.Max(1, (int)Math.Round(pageSize.Height * scale));
+
+                if (width > PdfPreviewMaxWidth)
+                {
+                    double aspect = (double)height / width;
+                    width = PdfPreviewMaxWidth;
+                    height = Math.Max(1, (int)Math.Round(width * aspect));
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                var bytes = image.ToByteArray(MagickFormat.Png);
+
+                using var image = pdfDoc.Render(
+                    pageIndex,
+                    width,
+                    height,
+                    PdfPreviewDensityDpi,
+                    PdfPreviewDensityDpi,
+                    PdfRenderFlags.Annotations);
+
+                using var ms = new MemoryStream();
+                image.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                ms.Position = 0;
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 var bitmap = new BitmapImage();
-                using var ms = new MemoryStream(bytes);
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
                 bitmap.StreamSource = ms;
@@ -1222,30 +1225,9 @@ namespace DocConverter.ViewModels
             _previewRenderGate.Release();
         }
 
-        private bool IsGhostscriptAvailable()
+        private static bool IsGhostscriptAvailable()
         {
-            try
-            {
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "gswin64c.exe",
-                    Arguments = "-version",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null) return false;
-
-                process.WaitForExit(3000);
-                return process.ExitCode == 0;
-            }
-            catch
-            {
-                return false;
-            }
+            return true;
         }
 
         private bool HasEditablePdf() =>
