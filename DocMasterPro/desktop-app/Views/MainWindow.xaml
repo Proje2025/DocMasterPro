@@ -285,8 +285,65 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
 
-          <TextBlock Grid.Row="0" Text="Word (.docx), Excel, PowerPoint dosyalarını PDF'e dönüştürün"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+          <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Word (.docx), Excel, PowerPoint dosyalarını PDF'e dönüştürün"
+                       FontSize="14" Foreground="Gray" Margin="0,0,0,8"/>
+
+            <!-- Hangi dönüştürme motorunun kullanılacağı: Microsoft Office / LibreOffice / yok -->
+            <Border CornerRadius="8" Padding="12,9" BorderThickness="1">
+              <Border.Style>
+                <Style TargetType="Border">
+                  <Setter Property="Background" Value="#F0FDF4"/>
+                  <Setter Property="BorderBrush" Value="#BBF7D0"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding OfficeEngine.IsLibreOffice}" Value="True">
+                      <Setter Property="Background" Value="#EFF6FF"/>
+                      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding OfficeEngine.CanConvertToPdf}" Value="False">
+                      <Setter Property="Background" Value="#FFFBEB"/>
+                      <Setter Property="BorderBrush" Value="#FDE68A"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Border.Style>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Ellipse Grid.Column="0" Width="10" Height="10" Margin="2,5,12,0" VerticalAlignment="Top">
+                  <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                      <Setter Property="Fill" Value="#16A34A"/>
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding OfficeEngine.IsLibreOffice}" Value="True">
+                          <Setter Property="Fill" Value="#2563EB"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding OfficeEngine.CanConvertToPdf}" Value="False">
+                          <Setter Property="Fill" Value="#D97706"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Ellipse.Style>
+                </Ellipse>
+
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding OfficeEngine.Title}" FontSize="13" FontWeight="SemiBold" Foreground="#172033"/>
+                  <TextBlock Text="{Binding OfficeEngine.Detail}" FontSize="12" Foreground="#526071" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <Button Grid.Column="2" Content="Kaldır" VerticalAlignment="Center" Margin="12,0,0,0"
+                        Command="{Binding RemoveDownloadedEngineCommand}"
+                        Visibility="{Binding OfficeEngine.CanRemove, Converter={StaticResource BoolToVis}}"
+                        ToolTip="DocMaster Pro'nun indirdiği LibreOffice kopyasını siler ve disk alanını boşaltır"
+                        Cursor="Hand" Background="Transparent" BorderThickness="0" Foreground="#1D4ED8" FontSize="12"
+                        Padding="6,2" MinWidth="0"/>
+              </Grid>
+            </Border>
+          </StackPanel>
 
           <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
                   Background="#FAFAFA" AllowDrop="True"
@@ -326,8 +383,21 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
 
-          <TextBlock Grid.Row="0" Text="PDF dosyalarını Microsoft Word ile düzenlenebilir DOCX dosyasına dönüştürün"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+          <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="PDF dosyalarını Microsoft Word ile düzenlenebilir DOCX dosyasına dönüştürün"
+                       FontSize="14" Foreground="Gray"/>
+
+            <!-- Word yoksa: bu özellik neden kullanılamıyor -->
+            <Border CornerRadius="8" Padding="12,9" BorderThickness="1" Margin="0,8,0,0"
+                    Background="#FFFBEB" BorderBrush="#FDE68A"
+                    Visibility="{Binding ShowWordRequiredNotice, Converter={StaticResource BoolToVis}}">
+              <StackPanel>
+                <TextBlock Text="Bu özellik Microsoft Word gerektirir" FontSize="13" FontWeight="SemiBold" Foreground="#92400E"/>
+                <TextBlock FontSize="12" Foreground="#78350F" TextWrapping="Wrap" Margin="0,2,0,0"
+                           Text="PDF'i düzenlenebilir belgeye çeviren dönüştürücü Word'ün kendisidir (Word 2013 ve sonrası). LibreOffice ile sonuç düşük kaliteli olduğu için bu dönüşüm onunla yapılmaz."/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
 
           <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
                   Background="#FAFAFA" AllowDrop="True"

@@ -177,6 +177,32 @@ namespace DocConverter.ViewModels
 
         private bool CanCheckForUpdates() => !IsBusy;
 
+        // ==================== Office dönüştürme motoru ====================
+        /// <summary>
+        /// Office belgelerini PDF'e çevirmek için kullanılacak motor. Arayüzde durum çubuğu olarak gösterilir.
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ShowWordRequiredNotice))]
+        private OfficeEngineStatus officeEngine = new(OfficeEngineKind.MicrosoftOffice);
+
+        /// <summary>PDF → Word yalnızca Microsoft Word ile yapılır; Word yoksa sekmede açıklama gösterilir.</summary>
+        public bool ShowWordRequiredNotice => !OfficeEngine.CanConvertPdfToWord;
+
+        [RelayCommand]
+        private void RemoveDownloadedEngine()
+        {
+            if (!OfficeEngine.CanRemove)
+                return;
+
+            var answer = MessageBox.Show(
+                "DocMaster Pro'nun indirdiği LibreOffice kopyası silinsin mi?\n\n" +
+                "Disk alanı boşalır. Microsoft Office kurulu değilse bir sonraki Office → PDF dönüştürmesinde yeniden indirmeniz istenir.",
+                "DocMaster Pro", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (answer == MessageBoxResult.Yes)
+                OfficeEngine = new OfficeEngineStatus(OfficeEngineKind.None);
+        }
+
         /// <summary>
         /// Toplu dönüştürmenin gerçek sonucunu gösterir; hepsi başarısız olduğunda "tamamlandı" demez.
         /// </summary>

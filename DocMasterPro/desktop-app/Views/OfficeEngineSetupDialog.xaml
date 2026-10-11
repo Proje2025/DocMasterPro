@@ -1,0 +1,257 @@
+<Window x:Class="DocConverter.Views.OfficeEngineSetupDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DocMaster Pro"
+        Width="560"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="White"
+        UseLayoutRounding="True"
+        FontFamily="Segoe UI">
+  <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+    <SolidColorBrush x:Key="Ink" Color="#172033"/>
+    <SolidColorBrush x:Key="Muted" Color="#637083"/>
+    <SolidColorBrush x:Key="Line" Color="#DFE5EE"/>
+
+    <Style x:Key="Glyph" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="DialogButton" TargetType="Button">
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="MinWidth" Value="104"/>
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="Margin" Value="8,0,0,0"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Background" Value="#F1F5F9"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Chrome" Property="Opacity" Value="0.88"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.45"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="PrimaryDialogButton" BasedOn="{StaticResource DialogButton}" TargetType="Button">
+      <Setter Property="Background" Value="#2563EB"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style x:Key="FactLabel" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Margin" Value="0,0,16,8"/>
+    </Style>
+
+    <Style x:Key="FactValue" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+  </Window.Resources>
+
+  <StackPanel Margin="28,24,28,22">
+
+    <!-- ==================== ONAY ==================== -->
+    <StackPanel Visibility="{Binding IsConsent, Converter={StaticResource BoolToVis}}">
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+        <Border Width="40" Height="40" CornerRadius="20" Background="#FEF3C7" Margin="0,0,14,0">
+          <TextBlock Style="{StaticResource Glyph}" Text="&#xE946;" FontSize="20" Foreground="#B45309" HorizontalAlignment="Center"/>
+        </Border>
+        <TextBlock Text="Microsoft Office bulunamadı" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{StaticResource Ink}" VerticalAlignment="Center"/>
+      </StackPanel>
+
+      <TextBlock TextWrapping="Wrap" FontSize="13.5" LineHeight="21" Foreground="{StaticResource Ink}" Margin="0,0,0,16">
+        Word, Excel ve PowerPoint dosyalarını PDF'e dönüştürmek için bir ofis motoru gerekir.
+        DocMaster Pro, ücretsiz ve açık kaynaklı <Run FontWeight="SemiBold">LibreOffice</Run>'i sizin için indirip
+        yalnızca kendi klasörüne hazırlayabilir. Bilgisayarınıza program kurulmaz, yönetici izni gerekmez.
+      </TextBlock>
+
+      <Border Background="#F8FAFC" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="16,14,16,6">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition/>
+            <RowDefinition/>
+            <RowDefinition/>
+            <RowDefinition/>
+            <RowDefinition/>
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FactLabel}" Text="İndirilecek"/>
+          <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource FactValue}">
+            <Run Text="{Binding VersionText, Mode=OneWay}"/> — <Run Text="{Binding DownloadSizeText, Mode=OneWay}"/>
+          </TextBlock>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FactLabel}" Text="Gereken boş alan"/>
+          <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource FactValue}">
+            <Run Text="{Binding RequiredSpaceText, Mode=OneWay}"/>
+            <Run FontWeight="Normal" Foreground="{StaticResource Muted}" Text="{Binding AvailableSpaceText, Mode=OneWay, StringFormat=' ({0})'}"/>
+          </TextBlock>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FactLabel}" Text="Tahmini süre"/>
+          <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource FactValue}" Text="Yaklaşık 10 dakika, yalnızca bir kez"/>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FactLabel}" Text="Kaynak"/>
+          <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource FactValue}" Text="{Binding PublisherText}"/>
+
+          <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FactLabel}" Text="Çıktı kalitesi"/>
+          <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource FactValue}" FontWeight="Normal"
+                     Text="Word ve PowerPoint belgeleri Office ile neredeyse aynı çıkar; Excel grafikleri farklı görünebilir."/>
+        </Grid>
+      </Border>
+
+      <!-- Yetersiz disk alanı -->
+      <Border Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,12,0,0">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding HasEnoughSpace}" Value="False">
+                <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Style="{StaticResource Glyph}" Text="&#xE7BA;" FontSize="16" Foreground="#B91C1C" Margin="0,0,10,0"/>
+          <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="#991B1B" Width="440"
+                     Text="Yeterli boş alan yok. Devam etmek için sürücüde yer açın ve bu pencereyi yeniden açın."/>
+        </StackPanel>
+      </Border>
+
+      <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,12,0,0"
+                 Text="Birebir aynı çıktı için bilgisayarınızda Microsoft Office kurulu olmalıdır; kuruluysa DocMaster Pro her zaman onu kullanır."/>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+        <Button Content="Vazgeç" Style="{StaticResource DialogButton}" Command="{Binding CloseCommand}" IsCancel="True"/>
+        <Button Content="İndir ve dönüştür" Style="{StaticResource PrimaryDialogButton}" Command="{Binding StartCommand}" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- ==================== İNDİRME / DOĞRULAMA / HAZIRLAMA ==================== -->
+    <StackPanel Visibility="{Binding IsWorking, Converter={StaticResource BoolToVis}}">
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <Border Width="40" Height="40" CornerRadius="20" Background="#DBEAFE" Margin="0,0,14,0">
+          <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;" FontSize="18" Foreground="#1D4ED8" HorizontalAlignment="Center"/>
+        </Border>
+        <TextBlock Text="{Binding StageTitle}" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{StaticResource Ink}" VerticalAlignment="Center"/>
+      </StackPanel>
+
+      <TextBlock Text="{Binding StageDescription}" TextWrapping="Wrap" FontSize="13.5" LineHeight="21"
+                 Foreground="{StaticResource Muted}" Margin="0,0,0,18"/>
+
+      <ProgressBar Height="8" Minimum="0" Maximum="100" Value="{Binding ProgressPercent}"
+                   IsIndeterminate="{Binding IsProgressIndeterminate}"
+                   Foreground="#2563EB" Background="#E2E8F0" BorderThickness="0"/>
+      <TextBlock Text="{Binding ProgressText}" FontSize="12.5" Foreground="{StaticResource Muted}" Margin="0,8,0,0" MinHeight="18"/>
+
+      <!-- Aşamalar -->
+      <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+        <TextBlock Text="1  İndir" FontSize="12.5" Margin="0,0,18,0">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="Downloading">
+                  <Setter Property="Foreground" Value="#1D4ED8"/>
+                  <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+        <TextBlock Text="2  İmzayı doğrula" FontSize="12.5" Margin="0,0,18,0">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="Verifying">
+                  <Setter Property="Foreground" Value="#1D4ED8"/>
+                  <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+        <TextBlock Text="3  Hazırla" FontSize="12.5">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="Preparing">
+                  <Setter Property="Foreground" Value="#1D4ED8"/>
+                  <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+        <Button Content="İptal" Style="{StaticResource DialogButton}" Command="{Binding CancelCommand}" IsCancel="True"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- ==================== HATA ==================== -->
+    <StackPanel Visibility="{Binding IsFailed, Converter={StaticResource BoolToVis}}">
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+        <Border Width="40" Height="40" CornerRadius="20" Background="#FEE2E2" Margin="0,0,14,0">
+          <TextBlock Style="{StaticResource Glyph}" Text="&#xE7BA;" FontSize="18" Foreground="#B91C1C" HorizontalAlignment="Center"/>
+        </Border>
+        <TextBlock Text="{Binding ErrorTitle}" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{StaticResource Ink}" VerticalAlignment="Center"/>
+      </StackPanel>
+
+      <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" FontSize="13.5" LineHeight="21"
+                 Foreground="{StaticResource Ink}"/>
+
+      <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,12,0,0"
+                 Text="Belgeleriniz değiştirilmedi. Microsoft Office ya da LibreOffice'i kendiniz kurarsanız DocMaster Pro onu otomatik olarak kullanır."/>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+        <Button Content="Kapat" Style="{StaticResource DialogButton}" Command="{Binding CloseCommand}" IsCancel="True"/>
+        <Button Content="Yeniden dene" Style="{StaticResource PrimaryDialogButton}" Command="{Binding RetryCommand}" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- ==================== HAZIR ==================== -->
+    <StackPanel Visibility="{Binding IsCompleted, Converter={StaticResource BoolToVis}}">
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+        <Border Width="40" Height="40" CornerRadius="20" Background="#DCFCE7" Margin="0,0,14,0">
+          <TextBlock Style="{StaticResource Glyph}" Text="&#xE73E;" FontSize="18" Foreground="#15803D" HorizontalAlignment="Center"/>
+        </Border>
+        <TextBlock Text="{Binding StageTitle}" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{StaticResource Ink}" VerticalAlignment="Center"/>
+      </StackPanel>
+      <TextBlock Text="{Binding StageDescription}" TextWrapping="Wrap" FontSize="13.5" Foreground="{StaticResource Muted}"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
