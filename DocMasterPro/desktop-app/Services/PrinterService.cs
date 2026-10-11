@@ -25,7 +25,7 @@ namespace DocConverter.Services
 
     public class PrinterService
     {
-        private readonly OfficeConverterService _officeConverter = new();
+        private readonly OfficeToPdfConverter _officeConverter = new();
 
         /// <summary>
         /// Seçili yazıcıya belge (PDF, Resim, Word/Office Dokümanı) yazdırır.
@@ -70,14 +70,8 @@ namespace DocConverter.Services
                         string tempPdf = Path.Combine(Path.GetTempPath(), $"DocMaster_Print_{Guid.NewGuid():N}.pdf");
                         try
                         {
-                            if (ext is ".docx" or ".doc")
-                                await _officeConverter.ConvertWordToPdfAsync(filePath, tempPdf, cancellationToken);
-                            else if (ext is ".xlsx" or ".xls")
-                                await _officeConverter.ConvertExcelToPdfAsync(filePath, tempPdf, cancellationToken);
-                            else if (ext is ".pptx" or ".ppt")
-                                await _officeConverter.ConvertPowerPointToPdfAsync(filePath, tempPdf, cancellationToken);
-                            else
-                                await _officeConverter.ConvertTxtToPdfAsync(filePath, tempPdf, cancellationToken);
+                            // Microsoft Office kuruluysa o, değilse LibreOffice kullanılır.
+                            await _officeConverter.ConvertAsync(filePath, tempPdf, cancellationToken);
 
                             if (File.Exists(tempPdf))
                             {

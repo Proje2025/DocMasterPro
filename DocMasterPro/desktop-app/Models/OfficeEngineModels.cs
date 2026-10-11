@@ -56,6 +56,32 @@ namespace DocConverter.Models
         private string VersionSuffix => string.IsNullOrWhiteSpace(Version) ? "" : " " + Version;
     }
 
+    /// <summary>Bir belge türünü açan Microsoft Office uygulaması.</summary>
+    public enum OfficeApp
+    {
+        Word,
+        Excel,
+        PowerPoint
+    }
+
+    /// <summary>Bulunan bir LibreOffice kopyası.</summary>
+    /// <param name="SofficePath">Çalıştırılacak dosya (varsa çıktısı okunabilen soffice.com, yoksa soffice.exe).</param>
+    /// <param name="Version">Ör. "26.2.6"; okunamadıysa null.</param>
+    /// <param name="IsDownloaded">DocMaster Pro'nun kendi klasörüne indirdiği kopya ise true.</param>
+    public sealed record LibreOfficeInstallation(string SofficePath, string? Version, bool IsDownloaded);
+
+    /// <summary>Belgeyi dönüştürebilecek ne Microsoft Office uygulaması ne de LibreOffice bulunduğunda fırlatılır.</summary>
+    public class OfficeEngineMissingException : InvalidOperationException
+    {
+        public OfficeEngineMissingException(OfficeApp app)
+            : base($"Bu belgeyi dönüştürmek için Microsoft {app} ya da LibreOffice gerekir; bilgisayarda ikisi de bulunamadı.")
+        {
+            App = app;
+        }
+
+        public OfficeApp App { get; }
+    }
+
     /// <summary>İndirme öncesinde kullanıcıya gösterilen gereksinimler.</summary>
     public sealed record EngineSetupRequirements(
         string Version,

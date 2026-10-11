@@ -44,6 +44,9 @@ namespace DocConverter
 
             base.OnStartup(e);
 
+            // Önceki oturumlardan kalmış geçici LibreOffice profillerini arka planda temizle.
+            Task.Run(LibreOfficeConverter.CleanupStaleWorkFiles);
+
             var window = new MainWindow();
             MainWindow = window;
 
@@ -56,6 +59,12 @@ namespace DocConverter
             }
 
             window.Show();
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            LibreOfficeConverter.CleanupWorkFiles();
+            base.OnExit(e);
         }
 
         /// <summary>

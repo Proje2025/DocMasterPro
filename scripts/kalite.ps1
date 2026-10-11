@@ -88,10 +88,11 @@ Adim 'Derleme' $hatalar
 
 # ---------- 4. Testler ----------
 if ($derlendi) {
-    $cikti = dotnet test $cozum -c Debug --no-build --nologo -v q | Out-String
+    $cikti = dotnet test $cozum -c Debug --no-build --nologo -v q 2>&1 | ForEach-Object { "$_" } | Out-String
     $hatalar = @()
     if ($LASTEXITCODE -ne 0) {
-        $hatalar += @(Satirlar $cikti | Where-Object { $_ -match '^\s*(Başarısız|Failed)\s+\S' } | Select-Object -First 20)
+        $hatalar += @(Satirlar $cikti | Where-Object { $_ -match '\[FAIL\]' } |
+            ForEach-Object { ($_ -replace '^\[xUnit\.net[^\]]*\]\s*', '').Trim() } | Select-Object -Unique -First 20)
         if ($hatalar.Count -eq 0) { $hatalar += 'testler başarısız' }
     }
     $ozet = Satirlar $cikti | Where-Object { $_ -match 'Toplam:|Total:' } | Select-Object -Last 1

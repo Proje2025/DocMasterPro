@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\desktop-app\DocConverter.csproj" />
   </ItemGroup>
 

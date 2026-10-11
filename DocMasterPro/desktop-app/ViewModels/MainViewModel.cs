@@ -27,6 +27,7 @@ namespace DocConverter.ViewModels
         private readonly PdfService _pdf = new();
         private readonly ConverterService _conv = new();
         private readonly OfficeConverterService _officeConv = new();
+        private readonly OfficeToPdfConverter _officeToPdf;
         private readonly UpdateService _updateService = new();
         private readonly SemaphoreSlim _previewRenderGate = new(1, 1);
         private CancellationTokenSource? _cts;
@@ -183,10 +184,64 @@ namespace DocConverter.ViewModels
         /// </summary>
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(ShowWordRequiredNotice))]
-        private OfficeEngineStatus officeEngine = new(OfficeEngineKind.MicrosoftOffice);
+        private OfficeEngineStatus officeEngine = new(OfficeEngineKind.None);
 
         /// <summary>PDF → Word yalnızca Microsoft Word ile yapılır; Word yoksa sekmede açıklama gösterilir.</summary>
         public bool ShowWordRequiredNotice => !OfficeEngine.CanConvertPdfToWord;
+
+        /// <summary>
+        /// LibreOffice'i indirip hazırlayan servis. Henüz kullanılamıyorsa null döner ve motor bulunamadığında
+        /// kullanıcıya ne kurması gerektiği söylenir.
+        /// </summary>
+        internal Func<IOfficeEngineInstaller?> EngineInstallerFactory { get; set; } = () => null;
+
+        /// <summary>Motor göstergesini bilgisayarın şu anki durumuna göre yeniler.</summary>
+        public void RefreshOfficeEngine()
+        {
+            try
+            {
+                OfficeEngine = _officeToPdf.GetStatus();
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("OfficeEngine", ex);
+            }
+        }
+
+        /// <summary>
+        /// Verilen uzantılardaki belgeler için bir dönüştürme motoru olduğundan emin olur. Yoksa LibreOffice'in
+        /// indirilmesini önerir; indirme kullanılamıyorsa ne yapılması gerektiğini söyler.
+        /// </summary>
+        /// <returns>Dönüştürmeye devam edilebiliyorsa true.</returns>
+        private bool EnsureOfficeEngine(IEnumerable<string> extensions)
+        {
+            RefreshOfficeEngine();
+
+            var missing = extensions
+                .Where(extension => OfficeToPdfConverter.AppFor(extension) != null && !_officeToPdf.HasEngineFor(extension))
+                .Distinct()
+                .ToList();
+            if (missing.Count == 0)
+                return true;
+
+            IOfficeEngineInstaller? installer = EngineInstallerFactory();
+            if (installer == null)
+            {
+                MessageBox.Show(
+                    "Bu belgeleri PDF'e dönüştürmek için Microsoft Office ya da LibreOffice gerekir; bilgisayarınızda ikisi de bulunamadı.\n\n" +
+                    "Ücretsiz LibreOffice'i libreoffice.org adresinden kurduktan sonra yeniden deneyin. DocMaster Pro onu otomatik olarak kullanır.",
+                    "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            var dialog = new Views.OfficeEngineSetupDialog(new OfficeEngineSetupViewModel(installer))
+            {
+                Owner = Application.Current?.MainWindow
+            };
+            bool ready = dialog.ShowDialog() == true;
+            RefreshOfficeEngine();
+            return ready && missing.All(_officeToPdf.HasEngineFor);
+        }
 
         [RelayCommand]
         private void RemoveDownloadedEngine()
@@ -221,13 +276,21 @@ namespace DocConverter.ViewModels
 
             MessageBox.Show(
                 $"{operation}: {detail}\n\nBaşarısız dosyalar listede kırmızı görünür. " +
-                "Microsoft Office'in kurulu olduğunu ve dosyaların başka bir programda açık olmadığını kontrol edin.",
+                "Dosyaların bozuk ya da parola korumalı olmadığını ve başka bir programda açık olmadığını kontrol edin.",
                 "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         // ==================== Constructor ====================
         public MainViewModel()
+            : this(new OfficeToPdfConverter())
         {
+        }
+
+        internal MainViewModel(OfficeToPdfConverter officeToPdf)
+        {
+            _officeToPdf = officeToPdf ?? throw new ArgumentNullException(nameof(officeToPdf));
+            RefreshOfficeEngine();
+
             HomeHub.OnNavigateToOfficeRequested = () =>
             {
                 SelectedAppSection = 1;
@@ -348,6 +411,9 @@ namespace DocConverter.ViewModels
         public async Task Merge()
         {
             if (MergeDocuments.Count == 0) return;
+
+            if (!EnsureOfficeEngine(MergeDocuments.Select(doc => doc.Extension)))
+                return;
 
             var saveDlg = new SaveFileDialog
             {
@@ -836,6 +902,9 @@ namespace DocConverter.ViewModels
         {
             if (OfficeDocuments.Count == 0) return;
 
+            if (!EnsureOfficeEngine(OfficeDocuments.Select(doc => doc.Extension)))
+                return;
+
             var folderDlg = new OpenFolderDialog { Title = "PDF'lerin kaydedileceği klasörü seçin" };
             if (folderDlg.ShowDialog() != true) return;
 
@@ -866,7 +935,7 @@ namespace DocConverter.ViewModels
                         string outputPath = Path.Combine(folderDlg.FolderName,
                             Path.GetFileNameWithoutExtension(doc.FileName) + ".pdf");
 
-                        await ConvertOfficeFileToPdfAsync(doc.FilePath, outputPath, doc.Extension, _cts.Token);
+                        await _officeToPdf.ConvertAsync(doc.FilePath, outputPath, _cts.Token);
                         doc.Status = "Done";
                     }
                     catch (OperationCanceledException)
@@ -939,10 +1008,12 @@ namespace DocConverter.ViewModels
         {
             if (PdfToWordDocuments.Count == 0) return;
 
-            if (!_officeConv.IsOfficeInstalled())
+            RefreshOfficeEngine();
+            if (!_officeToPdf.IsWordInstalled)
             {
                 MessageBox.Show(
-                    "PDF'den Word'e dönüştürme için Microsoft Word 2013 veya daha yeni bir sürüm kurulu olmalıdır.",
+                    "PDF'den Word'e dönüştürme için Microsoft Word 2013 veya daha yeni bir sürüm gerekir; bu bilgisayarda Word bulunamadı.\n\n" +
+                    "Dönüştürücü Word'ün kendisidir. LibreOffice ile sonuç düşük kaliteli olduğu için bu dönüşüm onunla yapılmaz.",
                     "DocMaster Pro",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -1615,42 +1686,15 @@ namespace DocConverter.ViewModels
             if (PathValidator.ImageExtensions.Contains(doc.Extension))
                 return _conv.ConvertImageToPdf(doc.FilePath);
 
-            string outputPath = Path.Combine(tempDir, $"{Guid.NewGuid():N}.pdf");
-
-            if (doc.Extension is ".docx" or ".doc")
+            // Microsoft Office kuruluysa o, değilse LibreOffice kullanılır.
+            if (OfficeToPdfConverter.AppFor(doc.Extension) != null)
             {
-                await _officeConv.ConvertWordToPdfAsync(doc.FilePath, outputPath, cancellationToken);
-                return outputPath;
-            }
-            else if (doc.Extension is ".xlsx" or ".xls")
-            {
-                await _officeConv.ConvertExcelToPdfAsync(doc.FilePath, outputPath, cancellationToken);
-                return outputPath;
-            }
-            else if (doc.Extension is ".pptx" or ".ppt")
-            {
-                await _officeConv.ConvertPowerPointToPdfAsync(doc.FilePath, outputPath, cancellationToken);
-                return outputPath;
-            }
-            else if (doc.Extension is ".txt" or ".rtf" or ".html" or ".htm")
-            {
-                await _officeConv.ConvertTxtToPdfAsync(doc.FilePath, outputPath, cancellationToken);
+                string outputPath = Path.Combine(tempDir, $"{Guid.NewGuid():N}.pdf");
+                await _officeToPdf.ConvertAsync(doc.FilePath, outputPath, cancellationToken);
                 return outputPath;
             }
 
             return null;
-        }
-
-        private async Task ConvertOfficeFileToPdfAsync(string inputPath, string outputPath, string extension, CancellationToken cancellationToken = default)
-        {
-            if (extension is ".docx" or ".doc")
-                await _officeConv.ConvertWordToPdfAsync(inputPath, outputPath, cancellationToken);
-            else if (extension is ".xlsx" or ".xls")
-                await _officeConv.ConvertExcelToPdfAsync(inputPath, outputPath, cancellationToken);
-            else if (extension is ".pptx" or ".ppt")
-                await _officeConv.ConvertPowerPointToPdfAsync(inputPath, outputPath, cancellationToken);
-            else if (extension is ".txt" or ".rtf")
-                await _officeConv.ConvertTxtToPdfAsync(inputPath, outputPath, cancellationToken);
         }
     }
 
