@@ -31,14 +31,35 @@ public partial class PdfPageViewItem : ObservableObject
     [ObservableProperty]
     private BitmapSource? image;
 
+    /// <summary>
+    /// Görüntü, şu anki yakınlaştırma için piksel piksel üretildiyse true. Yakınlaştırma değişince
+    /// yeni görüntü hazırlanana kadar eskisi gerilerek gösterilir ve bu değer false olur.
+    /// </summary>
+    [ObservableProperty]
+    private bool isImageExact;
+
+    [ObservableProperty]
+    private BitmapSource? thumbnail;
+
     [ObservableProperty]
     private bool isRendering;
 
     [ObservableProperty]
-    private string renderStatus = "Sayfa beklemede";
+    private string renderStatus = "";
 
     [ObservableProperty]
     private bool isActive;
+
+    /// <summary>Görüntünün üretildiği ölçek anahtarı; farklıysa sayfa yeniden çizilmelidir.</summary>
+    public string RenderedKey { get; set; } = "";
+
+    /// <summary>Görüntü, üretildiği ölçekte ekran pikselleriyle birebir eşleşiyor mu (piksel sınırına takılmadı mı).</summary>
+    public bool RenderedExact { get; set; }
+
+    /// <summary>Şu anda çizilmekte olan ölçek anahtarı; aynı ölçek iki kez çizilmesin diye tutulur.</summary>
+    public string PendingKey { get; set; } = "";
+
+    public bool IsThumbnailRequested { get; set; }
 
     public ObservableCollection<PdfAnnotationItem> Annotations { get; } = new();
 

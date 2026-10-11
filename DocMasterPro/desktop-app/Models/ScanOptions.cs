@@ -36,8 +36,24 @@ namespace DocConverter.Models
         Auto
     }
 
+    /// <summary>
+    /// Taranan sayfalar PDF'e yazılırken uygulanan sıkıştırma düzeyi.
+    /// Tarama çözünürlüğünden bağımsızdır: tarama ne kadar yüksek DPI ile yapılırsa yapılsın
+    /// çıktı bu profilin üst sınırına indirgenir.
+    /// </summary>
+    public enum ScanOutputQuality
+    {
+        Small,     // E-posta / arşiv: en küçük dosya
+        Balanced,  // Günlük ofis kullanımı (varsayılan)
+        High,      // Baskı kalitesi
+        Lossless   // Kayıpsız: çok büyük dosya
+    }
+
     public partial class ScanOptions : ObservableObject
     {
+        [ObservableProperty]
+        private ScanOutputQuality outputQuality = ScanOutputQuality.Balanced;
+
         [ObservableProperty]
         private ScanSource source = ScanSource.FeederSingle;
 
@@ -56,19 +72,22 @@ namespace DocConverter.Models
         [ObservableProperty]
         private int contrast = 0;   // -100 .. 100
 
+        // Eğrilik düzeltme ve kırpma PDF kaydedilirken uygulanır. Sayfa piksellerini değiştirdikleri
+        // için varsayılan olarak kapalıdır; kullanıcı kendi belgelerinde deneyip açar.
         [ObservableProperty]
-        private bool autoDeskew = true;
+        private bool autoDeskew;
 
         [ObservableProperty]
         private bool removeBlankPages;
 
         [ObservableProperty]
-        private bool autoCrop = true;
+        private bool autoCrop;
     }
 
     public partial class ScannedPageItem : ObservableObject
     {
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(DisplayName))]
         private int pageNumber;
 
         [ObservableProperty]
@@ -84,6 +103,7 @@ namespace DocConverter.Models
         private int resolutionDpi = 300;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(FileSizeFormatted))]
         private long fileSize;
 
         [ObservableProperty]

@@ -15,7 +15,6 @@ using DocConverter.Models;
 using DocConverter.Services;
 using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
 using PdfiumViewer.Enums;
-using ImageMagick;
 using Microsoft.Win32;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
@@ -158,17 +157,9 @@ namespace DocConverter.ViewModels
                 var result = await _updateService.CheckForUpdatesAsync();
                 if (result.HasUpdate)
                 {
-                    var updateVm = new UpdateViewModel(_updateService)
-                    {
-                        State = UpdateState.UpdateAvailable,
-                        CurrentVersion = result.CurrentVersion,
-                        LatestVersion = result.LatestVersion,
-                        ReleaseTitle = result.ReleaseTitle,
-                        ReleaseNotes = result.ReleaseNotes,
-                        PublishedDateText = result.PublishedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "",
-                        StageTitle = "Yeni Bir Sürüm Mevcut!",
-                        StageDescription = $"DocMaster Pro v{result.LatestVersion} indirilebilir."
-                    };
+                    // Denetim sonucu görünüm modeline verilmezse "Şimdi Güncelle" düğmesi hiçbir şey yapmaz.
+                    var updateVm = new UpdateViewModel(_updateService);
+                    updateVm.ShowCheckResult(result);
 
                     var dialog = new DocConverter.Views.UpdateDialog(updateVm);
                     if (Application.Current?.MainWindow != null && Application.Current.MainWindow.IsVisible)
@@ -186,6 +177,28 @@ namespace DocConverter.ViewModels
 
         private bool CanCheckForUpdates() => !IsBusy;
 
+        /// <summary>
+        /// Toplu dönüştürmenin gerçek sonucunu gösterir; hepsi başarısız olduğunda "tamamlandı" demez.
+        /// </summary>
+        private static void ShowBatchResult(string operation, int total, int failed)
+        {
+            if (failed == 0)
+            {
+                MessageBox.Show($"{operation}: {total} dosya dönüştürüldü.", "DocMaster Pro",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string detail = failed == total
+                ? "Dosyaların hiçbiri dönüştürülemedi."
+                : $"{total - failed} dosya dönüştürüldü, {failed} dosya dönüştürülemedi.";
+
+            MessageBox.Show(
+                $"{operation}: {detail}\n\nBaşarısız dosyalar listede kırmızı görünür. " +
+                "Microsoft Office'in kurulu olduğunu ve dosyaların başka bir programda açık olmadığını kontrol edin.",
+                "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
         // ==================== Constructor ====================
         public MainViewModel()
         {
@@ -201,7 +214,7 @@ namespace DocConverter.ViewModels
             DeviceHub.OnSendToPdfStudioRequested = async pdfPath =>
             {
                 SelectedAppSection = 3;
-                await PdfStudio.OpenPdfPathAsync(pdfPath, promptForUnsavedChanges: false);
+                await PdfStudio.OpenPdfPathAsync(pdfPath, promptForUnsavedChanges: true);
             };
 
             MergeDocuments.CollectionChanged += (_, _) => MergeCommand.NotifyCanExecuteChanged();
@@ -456,12 +469,15 @@ namespace DocConverter.ViewModels
                 var folderDlg = new OpenFolderDialog { Title = "Çıkış klasörünü seçin" };
                 if (folderDlg.ShowDialog() == true)
                     SplitOutputFolder = folderDlg.FolderName;
+
+                SplitCommand.NotifyCanExecuteChanged();
             }
         }
 
         partial void OnPageRangeTextChanged(string value)
         {
             SplitRanges.Clear();
+            SplitCommand.NotifyCanExecuteChanged();
             if (string.IsNullOrWhiteSpace(value)) return;
 
             var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -804,10 +820,13 @@ namespace DocConverter.ViewModels
 
             try
             {
-                int total = OfficeDocuments.Count;
+                // Liste, dönüştürme sürerken kullanıcı tarafından değiştirilebilir; kopyası üzerinde dönülür.
+                var documents = OfficeDocuments.ToList();
+                int total = documents.Count;
                 int current = 0;
+                int failed = 0;
 
-                foreach (var doc in OfficeDocuments)
+                foreach (var doc in documents)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
 
@@ -831,17 +850,14 @@ namespace DocConverter.ViewModels
                     }
                     catch (Exception ex)
                     {
+                        failed++;
                         doc.Status = "Error";
                         FileLogger.LogError($"OfficeToPdf ({doc.FileName})", ex);
                     }
                 }
 
-                StatusMessage = "Tamamlandı";
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    MessageBox.Show("Dönüştürme tamamlandı!", "DocMaster Pro",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                });
+                StatusMessage = failed == 0 ? "Tamamlandı" : $"Tamamlandı — {failed} dosya dönüştürülemedi";
+                ShowBatchResult("Office → PDF", total, failed);
             }
             catch (OperationCanceledException)
             {
@@ -917,10 +933,12 @@ namespace DocConverter.ViewModels
 
             try
             {
-                int total = PdfToWordDocuments.Count;
+                var documents = PdfToWordDocuments.ToList();
+                int total = documents.Count;
                 int current = 0;
+                int failed = 0;
 
-                foreach (var doc in PdfToWordDocuments)
+                foreach (var doc in documents)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
 
@@ -944,17 +962,14 @@ namespace DocConverter.ViewModels
                     }
                     catch (Exception ex)
                     {
+                        failed++;
                         doc.Status = "Error";
                         FileLogger.LogError($"PdfToWord ({doc.FileName})", ex);
                     }
                 }
 
-                StatusMessage = "Tamamlandı";
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    MessageBox.Show("PDF'den Word'e dönüştürme tamamlandı!", "DocMaster Pro",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                });
+                StatusMessage = failed == 0 ? "Tamamlandı" : $"Tamamlandı — {failed} dosya dönüştürülemedi";
+                ShowBatchResult("PDF → Word", total, failed);
             }
             catch (OperationCanceledException)
             {
@@ -1278,7 +1293,7 @@ namespace DocConverter.ViewModels
                         throw new ArgumentOutOfRangeException(nameof(page), "Sayfa indeksi geçersiz.");
 
                     doc.Pages.RemoveAt(page.PageIndex);
-                    doc.Save(EditPdfPath);
+                    PdfService.SaveInPlace(doc, EditPdfPath);
                     nextSelectedIndex = Math.Min(selectedIndex, doc.PageCount - 1);
                 }
 
@@ -1315,7 +1330,7 @@ namespace DocConverter.ViewModels
 
                     var pdfPage = doc.Pages[page.PageIndex];
                     pdfPage.Rotate = (pdfPage.Rotate + 90) % 360;
-                    doc.Save(EditPdfPath);
+                    PdfService.SaveInPlace(doc, EditPdfPath);
                 }
 
                 await LoadPdfPagesAsync(EditPdfPath, page.PageIndex);
@@ -1458,7 +1473,7 @@ namespace DocConverter.ViewModels
                     {
                         page.Rotate = (page.Rotate + SelectedRotation) % 360;
                     }
-                    doc.Save(EditPdfPath);
+                    PdfService.SaveInPlace(doc, EditPdfPath);
                 }
                 await LoadPdfPagesAsync(EditPdfPath, selectedIndex);
 
@@ -1502,7 +1517,7 @@ namespace DocConverter.ViewModels
                         gfx.RotateTransform(-45);
                         gfx.DrawString(WatermarkText, font, brush, 0, 0, XStringFormats.Center);
                     }
-                    doc.Save(EditPdfPath);
+                    PdfService.SaveInPlace(doc, EditPdfPath);
                 }
                 await LoadPdfPagesAsync(EditPdfPath, selectedIndex);
 
@@ -1542,7 +1557,9 @@ namespace DocConverter.ViewModels
                     StatusMessage = "PDF kaydediliyor...";
                     await WaitForPreviewRenderIdleAsync();
 
-                    File.Copy(EditPdfPath, saveDlg.FileName, true);
+                    // Aynı dosyanın üzerine kopyalamak "dosya kullanımda" hatası verir; değişiklikler zaten diskte.
+                    if (!string.Equals(Path.GetFullPath(EditPdfPath), Path.GetFullPath(saveDlg.FileName), StringComparison.OrdinalIgnoreCase))
+                        File.Copy(EditPdfPath, saveDlg.FileName, true);
                     MessageBox.Show("PDF kaydedildi!", "DocMaster Pro",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                 }

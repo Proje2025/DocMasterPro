@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using ImageMagick;
 using DocConverter.Helpers;
 using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
 using PdfiumViewer.Enums;
@@ -37,18 +36,20 @@ namespace DocConverter.Services
 
             try
             {
-                using var imageSharp = SixLabors.ImageSharp.Image.Load(imagePath);
-
                 using var document = new PdfSharpDoc();
                 document.PageLayout = PdfPageLayout.SinglePage;
 
-                var page = document.AddPage();
-                page.Width = XUnit.FromPoint(imageSharp.Width);
-                page.Height = XUnit.FromPoint(imageSharp.Height);
+                var (data, widthPt, heightPt) = PrepareImageForPdf(imagePath);
+                using (data)
+                using (var xImage = XImage.FromStream(data))
+                {
+                    var page = document.AddPage();
+                    page.Width = XUnit.FromPoint(widthPt);
+                    page.Height = XUnit.FromPoint(heightPt);
 
-                using var xImage = XImage.FromFile(imagePath);
-                using var gfx = XGraphics.FromPdfPage(page);
-                gfx.DrawImage(xImage, 0, 0, page.Width.Point, page.Height.Point);
+                    using var gfx = XGraphics.FromPdfPage(page);
+                    gfx.DrawImage(xImage, 0, 0, widthPt, heightPt);
+                }
 
                 document.Save(output);
 
@@ -62,6 +63,87 @@ namespace DocConverter.Services
                 FileLogger.LogError("ConvertImageToPdf", ex);
                 throw new Exception($"Görüntü PDF'e dönüştürülemedi: {Path.GetFileName(imagePath)}", ex);
             }
+        }
+
+        /// <summary>
+        /// Görüntüyü PDFsharp'ın okuyabileceği biçime getirir ve sayfa boyutunu hesaplar.
+        /// PDFsharp yalnızca JPEG, PNG ve BMP okur; GIF, TIFF ve WEBP önce PNG'ye çevrilir.
+        /// Sayfa boyutu piksel sayısından değil fiziksel boyuttan (DPI) hesaplanır ve A4'ü aşıyorsa
+        /// A4'e sığdırılır; eskiden 3000 piksellik bir fotoğraf 1 metrelik sayfa üretiyordu.
+        /// </summary>
+        private static (Stream Data, double WidthPt, double HeightPt) PrepareImageForPdf(string imagePath)
+        {
+            const double a4Short = 595.28;
+            const double a4Long = 841.89;
+
+            SixLabors.ImageSharp.ImageInfo info = SixLabors.ImageSharp.Image.Identify(imagePath);
+            bool isJpeg = info.Metadata.DecodedImageFormat is SixLabors.ImageSharp.Formats.Jpeg.JpegFormat;
+
+            // Telefon ve kamera fotoğrafları yan çekilip EXIF ile "döndür" diye işaretlenir.
+            ushort orientation = 1;
+            if (info.Metadata.ExifProfile != null &&
+                info.Metadata.ExifProfile.TryGetValue(
+                    SixLabors.ImageSharp.Metadata.Profiles.Exif.ExifTag.Orientation, out var orientationValue) &&
+                orientationValue != null)
+            {
+                orientation = orientationValue.Value;
+            }
+
+            int width = info.Width;
+            int height = info.Height;
+            Stream data;
+
+            if (isJpeg && orientation <= 1)
+            {
+                // JPEG olduğu gibi gömülür: yeniden sıkıştırma yok, kalite kaybı yok.
+                data = File.OpenRead(imagePath);
+            }
+            else
+            {
+                using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(imagePath);
+                image.Mutate(c => c.AutoOrient().BackgroundColor(SixLabors.ImageSharp.Color.White));
+                width = image.Width;
+                height = image.Height;
+
+                var buffer = new MemoryStream();
+                if (isJpeg)
+                {
+                    image.Save(buffer, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 92 });
+                }
+                else
+                {
+                    image.Save(buffer, new SixLabors.ImageSharp.Formats.Png.PngEncoder
+                    {
+                        ColorType = SixLabors.ImageSharp.Formats.Png.PngColorType.Rgb,
+                        BitDepth = SixLabors.ImageSharp.Formats.Png.PngBitDepth.Bit8
+                    });
+                }
+
+                buffer.Position = 0;
+                data = buffer;
+            }
+
+            double dpi = info.Metadata.ResolutionUnits switch
+            {
+                SixLabors.ImageSharp.Metadata.PixelResolutionUnit.PixelsPerInch => info.Metadata.HorizontalResolution,
+                SixLabors.ImageSharp.Metadata.PixelResolutionUnit.PixelsPerCentimeter => info.Metadata.HorizontalResolution * 2.54,
+                SixLabors.ImageSharp.Metadata.PixelResolutionUnit.PixelsPerMeter => info.Metadata.HorizontalResolution * 0.0254,
+                _ => 0
+            };
+
+            // 72 / 96 DPI çoğunlukla "bilinmiyor" demektir; ekran çözünürlüğü varsayılır.
+            if (dpi < 100 || dpi > 2400)
+                dpi = 96;
+
+            double widthPt = width / dpi * 72d;
+            double heightPt = height / dpi * 72d;
+
+            bool landscape = widthPt > heightPt;
+            double maxWidth = landscape ? a4Long : a4Short;
+            double maxHeight = landscape ? a4Short : a4Long;
+            double scale = Math.Min(1d, Math.Min(maxWidth / widthPt, maxHeight / heightPt));
+
+            return (data, Math.Max(1, widthPt * scale), Math.Max(1, heightPt * scale));
         }
 
         /// <summary>

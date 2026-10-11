@@ -381,8 +381,20 @@ namespace DocConverter.Services
         /// </summary>
         public static string ResolveWindowsPrinterName(DeviceInfo printer)
         {
+            return ResolveWindowsPrinterName(printer, out _);
+        }
+
+        /// <summary>
+        /// Yazıcı adını çözer. <paramref name="matched"/> false ise seçilen cihaz kurulu bir yazıcıyla
+        /// eşleşmemiş, yerine varsayılan (ya da ilk) yazıcı döndürülmüştür; belge kullanıcıya sorulmadan
+        /// başka bir yazıcıya gönderilmemelidir.
+        /// </summary>
+        public static string ResolveWindowsPrinterName(DeviceInfo printer, out bool matched)
+        {
+            matched = false;
             if (printer == null) return string.Empty;
 
+            matched = true;
             var installed = PrinterSettings.InstalledPrinters.Cast<string>().ToList();
 
             // 1. Doğrudan kurulu yazıcı adı ile birebir eşleşme
@@ -400,8 +412,8 @@ namespace DocConverter.Services
                     {
                         string pName = p["Name"]?.ToString() ?? "";
                         string port = p["PortName"]?.ToString() ?? "";
-                        if (port.Contains(printer.IpAddress, StringComparison.OrdinalIgnoreCase) ||
-                            pName.Contains(printer.IpAddress, StringComparison.OrdinalIgnoreCase))
+                        if (ContainsIpAddress(port, printer.IpAddress) ||
+                            ContainsIpAddress(pName, printer.IpAddress))
                         {
                             return pName;
                         }
@@ -429,6 +441,9 @@ namespace DocConverter.Services
                                                         (!string.IsNullOrEmpty(printer.ModelName) && p.Contains(printer.ModelName, StringComparison.OrdinalIgnoreCase)));
             if (!string.IsNullOrEmpty(partial)) return partial;
 
+            // Buradan sonrası eşleşme değil, yedektir: çağıran taraf kullanıcıya sormalıdır.
+            matched = false;
+
             // 5. Varsayılan sistem yazıcısı
             try
             {
@@ -440,6 +455,31 @@ namespace DocConverter.Services
 
             // 6. İlk kurulu yazıcı veya printer.Name
             return installed.FirstOrDefault() ?? printer.Name;
+        }
+
+        /// <summary>
+        /// Metinde IP adresinin tam olarak geçip geçmediğine bakar; "192.168.1.1" araması
+        /// "IP_192.168.1.10" bağlantı noktasıyla eşleşmemelidir.
+        /// </summary>
+        internal static bool ContainsIpAddress(string text, string ipAddress)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(ipAddress))
+                return false;
+
+            int index = 0;
+            while ((index = text.IndexOf(ipAddress, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                bool startsClean = index == 0 || !(char.IsDigit(text[index - 1]) || text[index - 1] == '.');
+                int end = index + ipAddress.Length;
+                bool endsClean = end >= text.Length || !char.IsDigit(text[end]);
+
+                if (startsClean && endsClean)
+                    return true;
+
+                index = end;
+            }
+
+            return false;
         }
     }
 }

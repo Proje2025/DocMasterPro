@@ -75,7 +75,7 @@ public class PdfSessionService
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
-                    throw new IOException("GeÃ§ici PDF Ã§alÄ±ÅŸma kopyasÄ± doÄŸrulanamadÄ±.");
+                    throw new IOException("Geçici PDF çalışma kopyası doğrulanamadı.");
 
                 if (File.Exists(workingPath))
                     File.Delete(workingPath);
@@ -114,17 +114,19 @@ public class PdfSessionService
         string tempPath = Path.Combine(targetDirectory, $"{Path.GetFileNameWithoutExtension(destinationPath)}.{Guid.NewGuid():N}.tmp.pdf");
         string backupPath = Path.Combine(targetDirectory, $"{Path.GetFileNameWithoutExtension(destinationPath)}.{Guid.NewGuid():N}.bak");
 
-        await using (var input = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-        await using (var output = File.Create(tempPath))
-        {
-            await input.CopyToAsync(output, cancellationToken);
-        }
-
-        if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
-            throw new IOException("Geçici PDF çıktısı doğrulanamadı.");
-
         try
         {
+            // Kopyalama da try içinde: iptal ya da disk hatasında geçici dosya kullanıcının klasöründe kalmasın.
+            await using (var input = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await using (var output = File.Create(tempPath))
+            {
+                await input.CopyToAsync(output, cancellationToken);
+                await output.FlushAsync(cancellationToken);
+            }
+
+            if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
+                throw new IOException("Geçici PDF çıktısı doğrulanamadı.");
+
             cancellationToken.ThrowIfCancellationRequested();
 
             if (File.Exists(destinationPath))

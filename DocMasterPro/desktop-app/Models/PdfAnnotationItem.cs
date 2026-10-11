@@ -55,6 +55,10 @@ public partial class PdfAnnotationItem : ObservableObject
     [ObservableProperty]
     private double viewHeight;
 
+    /// <summary>Yazı boyutunun ekrandaki karşılığı; PDF'e yazılan boyutla aynı görünsün diye yakınlaştırmayla ölçeklenir.</summary>
+    [ObservableProperty]
+    private double viewFontSize = 16;
+
     [ObservableProperty]
     private bool isSelected;
 

@@ -137,7 +137,7 @@ namespace DocConverter.Services
 
                         var dev = new DeviceInfo
                         {
-                            Id = $"PRN_{name.GetHashCode():X8}",
+                            Id = $"PRN_{StableHash(name)}",
                             Name = name,
                             DriverName = driverName,
                             Type = name.Contains("4510", StringComparison.OrdinalIgnoreCase) ? DeviceType.MultiFunction : DeviceType.Printer,
@@ -166,7 +166,7 @@ namespace DocConverter.Services
                     {
                         var dev = new DeviceInfo
                         {
-                            Id = $"PRN_{pName.GetHashCode():X8}",
+                            Id = $"PRN_{StableHash(pName)}",
                             Name = pName,
                             Type = DeviceType.Printer,
                             ConnectionType = DeviceConnectionType.USB,
@@ -282,6 +282,23 @@ namespace DocConverter.Services
         }
 
         /// <summary>
+        /// Bir aygıt adından her çalıştırmada aynı kalan kısa kimlik üretir (FNV-1a).
+        /// string.GetHashCode() .NET'te her işlemde farklı tohumlandığı için aynı yazıcı her açılışta
+        /// yeni bir kimlik alıyor, kayıtlı cihazlar eşleşmiyor ve kayıt dosyası yinelenenlerle doluyordu.
+        /// </summary>
+        internal static string StableHash(string value)
+        {
+            uint hash = 2166136261;
+            foreach (char c in (value ?? string.Empty).ToUpperInvariant())
+            {
+                hash ^= c;
+                hash *= 16777619;
+            }
+
+            return hash.ToString("X8");
+        }
+
+        /// <summary>
         /// WIA COM arayüzü ile kayıtlı tarayıcıları sorgular
         /// </summary>
         public List<DeviceInfo> DiscoverWiaScanners()
@@ -316,7 +333,7 @@ namespace DocConverter.Services
 
                         var dev = new DeviceInfo
                         {
-                            Id = $"WIA_{id.GetHashCode():X8}",
+                            Id = $"WIA_{StableHash(id)}",
                             Name = name,
                             Manufacturer = mfg,
                             ModelName = desc,

@@ -1,32 +1,49 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using DocConverter.Models;
-using PdfSharp.Drawing;
-using PdfSharp.Pdf;
 
 namespace DocConverter.Services
 {
+    /// <summary>
+    /// Bir tarama oturumunun sonucu.
+    /// </summary>
+    public sealed record ScanSessionResult(
+        List<ScannedPageItem> Pages,
+        bool Cancelled,
+        int BlankPagesSkipped,
+        string? Warning,
+        string? Notice);
+
     public class ScannerService
     {
         private static readonly string ScanTempDir = Path.Combine(Path.GetTempPath(), "DocMaster_Scans");
+        private static readonly TimeSpan StaleSessionAge = TimeSpan.FromDays(7);
+        private const double BlankPageThreshold = 98.5;
+
         private readonly BlankPageDetector _blankDetector = new();
+        private readonly Func<IScanSession> _sessionFactory;
 
         public ScannerService()
+            : this(() => new WiaScanSession())
         {
-            if (!Directory.Exists(ScanTempDir))
-            {
-                Directory.CreateDirectory(ScanTempDir);
-            }
+        }
+
+        /// <summary>Testlerde gerçek donanım yerine sahte bir oturum vermek için.</summary>
+        public ScannerService(Func<IScanSession> sessionFactory)
+        {
+            _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
+            Directory.CreateDirectory(ScanTempDir);
+            PurgeStaleTempFiles();
         }
 
         /// <summary>
-        /// Seçili tarayıcıdan (Fujitsu fi-6230, WIA cihazı vb.) gerçek donanım üzerinden belge tarama işlemini gerçekleştirir.
-        /// Kesinlikle sahte/mock veri üretmez.
+        /// Seçili tarayıcıdan (Fujitsu fi serisi, WIA cihazı vb.) gerçek donanım üzerinden belge tarar.
         /// </summary>
         public async Task<List<ScannedPageItem>> ScanDocumentsAsync(
             DeviceInfo scanner,
@@ -34,334 +51,152 @@ namespace DocConverter.Services
             CancellationToken cancellationToken = default,
             IProgress<string>? progress = null)
         {
-            if (scanner == null)
-            {
-                throw new InvalidOperationException("Lütfen tarama yapılacak bir tarayıcı seçin.");
-            }
-
-            progress?.Report($"{scanner.Name} üzerinden gerçek tarama başlatılıyor...");
-
-            var scannedPages = new List<ScannedPageItem>();
-            string sessionFolder = Path.Combine(ScanTempDir, $"Scan_{DateTime.Now:yyyyMMdd_HHmmss}");
-            Directory.CreateDirectory(sessionFolder);
-
-            await Task.Run(() =>
-            {
-                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    throw new PlatformNotSupportedException("Tarayıcı işlemleri sadece Windows işletim sisteminde desteklenmektedir.");
-                }
-
-                bool success = PerformWiaScan(scanner, options, sessionFolder, scannedPages, progress, cancellationToken);
-                if (!success && scannedPages.Count == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"'{scanner.Name}' cihazından görüntü alınamadı.\n\n" +
-                        "Olası nedenler:\n" +
-                        "1. Tarayıcının USB veya ağ kablosu takılı olmayabilir.\n" +
-                        "2. Tarayıcı kapalı veya uyku modunda olabilir.\n" +
-                        "3. ADF (Otomatik Belge Besleyici) seçiliyse besleyicide kağıt bulunmuyor olabilir.\n" +
-                        "4. Tarayıcı sürücüsü (WIA/TWAIN) Windows tarafından tanınmamış olabilir.");
-                }
-            }, cancellationToken);
-
-            progress?.Report($"Tarama tamamlandı: {scannedPages.Count} sayfa başarıyla tarandı.");
-            return scannedPages;
-        }
-
-        private bool PerformWiaScan(
-            DeviceInfo scanner,
-            ScanOptions options,
-            string outputDir,
-            List<ScannedPageItem> scannedPages,
-            IProgress<string>? progress,
-            CancellationToken cancellationToken)
-        {
-            Type? deviceManagerType = Type.GetTypeFromProgID("WIA.DeviceManager");
-            if (deviceManagerType == null)
-            {
-                throw new InvalidOperationException("Windows WIA (Windows Image Acquisition) servisi sistemde bulunamadı.");
-            }
-
-            dynamic? deviceManager = Activator.CreateInstance(deviceManagerType);
-            if (deviceManager == null)
-            {
-                throw new InvalidOperationException("WIA DeviceManager başlatılamadı.");
-            }
-
-            dynamic deviceInfos = deviceManager.DeviceInfos;
-            dynamic? targetDeviceInfo = null;
-
-            int count = (int)deviceInfos.Count;
-            var availableWiaNames = new List<string>();
-
-            for (int i = 1; i <= count; i++)
-            {
-                dynamic info = deviceInfos[i];
-                string id = (string)info.DeviceID;
-                string pName = (string)info.Properties["Name"].Value;
-                availableWiaNames.Add(pName);
-
-                if (id == scanner.SerialOrHardwareId ||
-                    pName.Contains(scanner.Name, StringComparison.OrdinalIgnoreCase) ||
-                    (!string.IsNullOrEmpty(scanner.ModelName) && pName.Contains(scanner.ModelName, StringComparison.OrdinalIgnoreCase)) ||
-                    (scanner.IsFujitsuSpecial && (pName.Contains("6230", StringComparison.OrdinalIgnoreCase) || pName.Contains("Fujitsu", StringComparison.OrdinalIgnoreCase))) ||
-                    (scanner.IsRicohSpecial && (pName.Contains("4510", StringComparison.OrdinalIgnoreCase) || pName.Contains("Ricoh", StringComparison.OrdinalIgnoreCase))))
-                {
-                    targetDeviceInfo = info;
-                    break;
-                }
-            }
-
-            if (targetDeviceInfo == null)
-            {
-                if (count == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Windows'ta kayıtlı hiçbir WIA tarayıcı cihazı bulunamadı.\n\n" +
-                        $"'{scanner.Name}' cihazını tarayıcı olarak kullanabilmek için:\n" +
-                        "1. Tarayıcının USB veya ağ kablosunun takılı ve açık olduğunu kontrol edin.\n" +
-                        "2. Cihazın Windows WIA veya Network TWAIN sürücüsünün kurulu olduğundan emin olun.\n" +
-                        "3. Çok fonksiyonlu Ricoh veya Fujitsu cihazınız için 'Windows Tarama Penceresini Aç' seçeneğini kullanabilirsiniz.");
-                }
-
-                if (scanner.Type == DeviceType.Scanner)
-                {
-                    targetDeviceInfo = deviceInfos[1];
-                }
-                else
-                {
-                    throw new InvalidOperationException(
-                        $"'{scanner.Name}' aygıtı bir tarayıcı (WIA) olarak tanınamadı.\n\n" +
-                        $"Sistemdeki mevcut aktif tarayıcılar:\n• {string.Join("\n• ", availableWiaNames)}\n\n" +
-                        "Lütfen listeden geçerli bir tarayıcı seçin veya 'Windows Tarama Penceresini Aç' butonunu kullanın.");
-                }
-            }
-
-            dynamic device = targetDeviceInfo.Connect();
-            dynamic item = device.Items[1];
-
-            // WIA Parametrelerini ayarla (DPI, Renk Modu, Sayfa Kaynağı, Duplex)
-            ConfigureWiaItemProperties(item, device, options);
-
-            int pageIndex = 1;
-            int validPageNumber = 1;
-            bool hasMorePages = true;
-
-            while (hasMorePages && !cancellationToken.IsCancellationRequested)
-            {
-                progress?.Report($"Sayfa {pageIndex} taranıyor...");
-
-                try
-                {
-                    Type? commonDialogType = Type.GetTypeFromProgID("WIA.CommonDialog");
-                    dynamic? commonDialog = commonDialogType != null ? Activator.CreateInstance(commonDialogType) : null;
-
-                    dynamic imageFile;
-                    if (commonDialog != null)
-                    {
-                        // Format: wiaFormatPNG = "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}"
-                        imageFile = commonDialog.ShowTransfer(item, "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}", false);
-                    }
-                    else
-                    {
-                        imageFile = item.Transfer("{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}");
-                    }
-
-                    if (imageFile != null)
-                    {
-                        string pagePath = Path.Combine(outputDir, $"page_{pageIndex:D3}.png");
-                        if (File.Exists(pagePath)) File.Delete(pagePath);
-                        imageFile.SaveFile(pagePath);
-
-                        // Boş sayfa kontrolü
-                        if (options.RemoveBlankPages && _blankDetector.IsImageBlank(pagePath, 98.5))
-                        {
-                            progress?.Report($"Sayfa {pageIndex} boş olduğu için otomatik olarak atlandı.");
-                            try { File.Delete(pagePath); } catch { }
-                        }
-                        else
-                        {
-                            var pageItem = LoadScannedPageItem(pagePath, validPageNumber, (int)options.Resolution);
-                            scannedPages.Add(pageItem);
-                            validPageNumber++;
-                        }
-
-                        pageIndex++;
-
-                        // Flatbed (Cam) ise tek sayfa biter, ADF ise besleyici bitene kadar devam eder
-                        if (options.Source == ScanSource.Flatbed)
-                        {
-                            hasMorePages = false;
-                        }
-                    }
-                    else
-                    {
-                        hasMorePages = false;
-                    }
-                }
-                catch (COMException comEx)
-                {
-                    // 0x80210003 = WIA_ERROR_PAPER_EMPTY (ADF'de kağıt bitti)
-                    if ((uint)comEx.ErrorCode == 0x80210003)
-                    {
-                        hasMorePages = false;
-                    }
-                    else
-                    {
-                        FileLogger.LogError($"WIA COM Transfer Error at page {pageIndex}", comEx);
-                        hasMorePages = false;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    FileLogger.LogError($"WIA Page Scan Error at page {pageIndex}", ex);
-                    hasMorePages = false;
-                }
-            }
-
-            return scannedPages.Count > 0;
+            var result = await ScanAsync(scanner, options, cancellationToken, progress);
+            return result.Pages;
         }
 
         /// <summary>
-        /// Windows yerel tarama iletişim kutusunu (WIA Common Dialog) açarak doğrudan tarama yaptırır.
+        /// Belge tarar; her sayfa hazır olduğunda <paramref name="pageProgress"/> ile bildirir.
+        /// Hiç sayfa alınamazsa (iptal dışında) <see cref="ScanFailedException"/> fırlatır.
         /// </summary>
-        public async Task<List<ScannedPageItem>> ScanViaWiaNativeDialogAsync(
+        public Task<ScanSessionResult> ScanAsync(
+            DeviceInfo scanner,
+            ScanOptions options,
+            CancellationToken cancellationToken = default,
+            IProgress<string>? progress = null,
+            IProgress<ScannedPageItem>? pageProgress = null)
+        {
+            if (scanner == null)
+                throw new InvalidOperationException("Lütfen tarama yapılacak bir tarayıcı seçin.");
+
+            ArgumentNullException.ThrowIfNull(options);
+
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                throw new PlatformNotSupportedException("Tarayıcı işlemleri yalnızca Windows'ta desteklenir.");
+
+            string sessionFolder = CreateSessionFolder("Scan");
+            progress?.Report($"{scanner.Name} hazırlanıyor...");
+
+            return RunOnStaThreadAsync(() =>
+            {
+                var pages = new List<ScannedPageItem>();
+                int blankSkipped = 0;
+
+                var outcome = ScanAcquisition.Run(
+                    _sessionFactory,
+                    scanner,
+                    options,
+                    index => Path.Combine(sessionFolder, $"page_{index:D4}.png"),
+                    (path, session) =>
+                    {
+                        if (options.RemoveBlankPages && _blankDetector.IsImageBlank(path, BlankPageThreshold))
+                        {
+                            blankSkipped++;
+                            TryDelete(path);
+                            progress?.Report($"Boş sayfa atlandı ({blankSkipped}).");
+                            return;
+                        }
+
+                        var page = LoadScannedPageItem(path, pages.Count + 1, session.EffectiveDpi);
+                        pages.Add(page);
+                        pageProgress?.Report(page);
+                        progress?.Report($"Sayfa {pages.Count} tarandı ({session.EffectiveDpi} DPI).");
+                    },
+                    progress,
+                    cancellationToken);
+
+                if (pages.Count == 0 && blankSkipped == 0)
+                    TryDeleteDirectory(sessionFolder);
+
+                return new ScanSessionResult(pages, outcome.Cancelled, blankSkipped, outcome.Warning, outcome.Notice);
+            });
+        }
+
+        /// <summary>
+        /// Windows'un kendi tarama penceresini (WIA Common Dialog) açar; ayarları kullanıcı o pencerede seçer.
+        /// </summary>
+        public Task<List<ScannedPageItem>> ScanViaWiaNativeDialogAsync(
             ScanOptions options,
             CancellationToken cancellationToken = default,
             IProgress<string>? progress = null)
         {
-            var scannedPages = new List<ScannedPageItem>();
-            string sessionFolder = Path.Combine(ScanTempDir, $"Scan_Native_{DateTime.Now:yyyyMMdd_HHmmss}");
-            Directory.CreateDirectory(sessionFolder);
+            ArgumentNullException.ThrowIfNull(options);
 
-            progress?.Report("Windows yerel tarayıcı penceresi açılıyor...");
+            string sessionFolder = CreateSessionFolder("Scan_Native");
+            progress?.Report("Windows tarama penceresi açılıyor...");
 
-            await Task.Run(() =>
+            return RunOnStaThreadAsync(() =>
             {
-                Type? commonDialogType = Type.GetTypeFromProgID("WIA.CommonDialog");
-                if (commonDialogType == null)
-                {
-                    throw new InvalidOperationException("Windows WIA CommonDialog bileşeni sistemde bulunamadı.");
-                }
+                var pages = new List<ScannedPageItem>();
 
-                dynamic? commonDialog = Activator.CreateInstance(commonDialogType);
-                if (commonDialog == null)
-                {
-                    throw new InvalidOperationException("WIA CommonDialog başlatılamadı.");
-                }
+                Type? dialogType = Type.GetTypeFromProgID("WIA.CommonDialog");
+                if (dialogType == null)
+                    throw new ScanFailedException("Windows WIA CommonDialog bileşeni sistemde bulunamadı.");
 
-                // 1 = ScannerDeviceType, 1 = ColorIntent, 0 = MaximizeQuality, wiaFormatPNG
-                dynamic? imageFile = commonDialog.ShowAcquireImage(
-                    1, // WiaDeviceType.ScannerDeviceType
-                    options.ColorMode == ScanColorMode.BlackAndWhite ? 4 : (options.ColorMode == ScanColorMode.Grayscale ? 2 : 1),
-                    0,
-                    "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}",
-                    false,
-                    true,
-                    false);
+                dynamic dialog = Activator.CreateInstance(dialogType)
+                                 ?? throw new ScanFailedException("WIA CommonDialog başlatılamadı.");
+                dynamic? imageFile = null;
 
-                if (imageFile != null)
+                try
                 {
-                    string pagePath = Path.Combine(sessionFolder, "native_page_001.png");
-                    if (File.Exists(pagePath)) File.Delete(pagePath);
+                    int intent = options.ColorMode switch
+                    {
+                        ScanColorMode.Grayscale => 2,
+                        ScanColorMode.BlackAndWhite => 4,
+                        _ => 1
+                    };
+
+                    // ShowAcquireImage(DeviceType = Scanner, Intent, Bias, Format, AlwaysSelectDevice, UseCommonUI, CancelError)
+                    imageFile = dialog.ShowAcquireImage(1, intent, 0, WiaScanSession.FormatPng, false, true, false);
+                    if (imageFile == null)
+                        return pages;
+
+                    string pagePath = Path.Combine(sessionFolder, "page_0001.png");
+                    if (File.Exists(pagePath))
+                        File.Delete(pagePath);
                     imageFile.SaveFile(pagePath);
 
-                    var pageItem = LoadScannedPageItem(pagePath, 1, (int)options.Resolution);
-                    scannedPages.Add(pageItem);
+                    int dpi = (int)options.Resolution;
+                    try
+                    {
+                        int reported = (int)Math.Round((double)imageFile.HorizontalResolution);
+                        if (reported >= 50 && reported <= 2400)
+                            dpi = reported;
+                    }
+                    catch
+                    {
+                        // Görüntü DPI bildirmiyor.
+                    }
+
+                    pages.Add(LoadScannedPageItem(pagePath, 1, dpi));
+                    return pages;
                 }
-            }, cancellationToken);
-
-            return scannedPages;
-        }
-
-        private static void ConfigureWiaItemProperties(dynamic item, dynamic device, ScanOptions options)
-        {
-            try
-            {
-                // WIA Item Properties:
-                // 6146 = Current Intent (1 = Color, 2 = Grayscale, 4 = Text/B&W)
-                // 6147 = Horizontal Resolution (DPI)
-                // 6148 = Vertical Resolution (DPI)
-                int intent = options.ColorMode switch
+                catch (Exception ex) when (ex is not ScanFailedException)
                 {
-                    ScanColorMode.Color => 1,
-                    ScanColorMode.Grayscale => 2,
-                    ScanColorMode.BlackAndWhite => 4,
-                    _ => 1
-                };
+                    if (WiaErrors.Classify(ex) == WiaFailureKind.Cancelled)
+                        return pages;
 
-                SetWiaProperty(item.Properties, 6146, intent);
-                SetWiaProperty(item.Properties, 6147, (int)options.Resolution);
-                SetWiaProperty(item.Properties, 6148, (int)options.Resolution);
+                    FileLogger.LogError("WIA yerel tarama penceresi", ex);
 
-                // Document Handling (Device Property 3088)
-                // 1 = Feeder (ADF), 2 = Flatbed, 4 = Duplex (1 | 4 = 5 ADF Duplex)
-                int handling = options.Source switch
-                {
-                    ScanSource.FeederSingle => 1,
-                    ScanSource.FeederDuplex => 1 | 4,
-                    _ => 2 // Flatbed
-                };
-
-                SetWiaProperty(device.Properties, 3088, handling);
-            }
-            catch (Exception ex)
-            {
-                FileLogger.LogError("ConfigureWiaItemProperties warning", ex);
-            }
-        }
-
-        private static void SetWiaProperty(dynamic properties, int propId, object value)
-        {
-            try
-            {
-                dynamic prop = properties[propId.ToString()];
-                if (prop != null)
-                {
-                    prop.Value = value;
+                    // 0x80210015: sistemde kullanılabilir WIA cihazı yok.
+                    string message = WiaErrors.CodeOf(ex) == 0x80210015
+                        ? "Windows'ta kullanılabilir bir WIA tarayıcı bulunamadı. Tarayıcının açık ve bağlı olduğunu kontrol edin."
+                        : WiaErrors.Describe(ex);
+                    throw new ScanFailedException(message, ex);
                 }
-            }
-            catch
-            {
-                // Ignore if property is read-only or unsupported
-            }
-        }
+                finally
+                {
+                    WiaScanSession.Release(imageFile);
+                    WiaScanSession.Release(dialog);
 
-        private static ScannedPageItem LoadScannedPageItem(string filePath, int pageNumber, int dpi)
-        {
-            var fileInfo = new FileInfo(filePath);
-            BitmapSource? bitmap = null;
-
-            try
-            {
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.UriSource = new Uri(filePath, UriKind.Absolute);
-                bmp.DecodePixelWidth = 600; // Thumbnail optimization
-                bmp.EndInit();
-                bmp.Freeze();
-                bitmap = bmp;
-            }
-            catch
-            {
-                // Fallback
-            }
-
-            return new ScannedPageItem
-            {
-                PageNumber = pageNumber,
-                FilePath = filePath,
-                PreviewImage = bitmap,
-                ResolutionDpi = dpi,
-                FileSize = fileInfo.Length,
-                Rotation = 0
-            };
+                    if (pages.Count == 0)
+                        TryDeleteDirectory(sessionFolder);
+                }
+            });
         }
 
         /// <summary>
-        /// Taranan sayfaları tek bir PDF dosyasında birleştirir
+        /// Taranan sayfaları varsayılan (dengeli) sıkıştırmayla tek bir PDF'te birleştirir.
         /// </summary>
         public async Task<string> SaveScannedPagesToPdfAsync(
             List<ScannedPageItem> pages,
@@ -369,41 +204,212 @@ namespace DocConverter.Services
             CancellationToken cancellationToken = default,
             IProgress<int>? progress = null)
         {
-            return await Task.Run(() =>
+            var result = await SaveScannedPagesAsync(pages, outputPath, new ScanPdfOptions(), cancellationToken, progress);
+            return result.OutputPath;
+        }
+
+        /// <summary>
+        /// Taranan sayfaları seçilen kalite profiliyle sıkıştırıp tek bir PDF'e yazar.
+        /// </summary>
+        public Task<ScanPdfResult> SaveScannedPagesAsync(
+            IReadOnlyList<ScannedPageItem> pages,
+            string outputPath,
+            ScanPdfOptions options,
+            CancellationToken cancellationToken = default,
+            IProgress<int>? progress = null)
+        {
+            ArgumentNullException.ThrowIfNull(pages);
+
+            // Koleksiyon arayüz iş parçacığına ait olabilir; arka plana geçmeden önce kopyalanır.
+            var sources = pages
+                .Select(p => new ScanPageSource(p.FilePath, p.Rotation, p.ResolutionDpi))
+                .ToList();
+
+            return Task.Run(
+                () => ScannedPdfBuilder.Build(sources, outputPath, options, cancellationToken, progress),
+                cancellationToken);
+        }
+
+        /// <summary>Artık kullanılmayan sayfa görüntülerini diskten siler.</summary>
+        public void DeletePageFiles(IEnumerable<ScannedPageItem> pages)
+        {
+            ArgumentNullException.ThrowIfNull(pages);
+
+            var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var page in pages)
             {
-                using var doc = new PdfDocument();
-                doc.Info.Title = "DocMaster Pro — Taranan Belge";
-                doc.Info.Creator = "DocMaster Pro Scanner Studio";
+                if (string.IsNullOrEmpty(page.FilePath) || !IsInsideScanTemp(page.FilePath))
+                    continue;
 
-                for (int i = 0; i < pages.Count; i++)
+                TryDelete(page.FilePath);
+
+                string? folder = Path.GetDirectoryName(page.FilePath);
+                if (!string.IsNullOrEmpty(folder))
+                    folders.Add(folder);
+            }
+
+            foreach (string folder in folders)
+            {
+                try
                 {
-                    if (cancellationToken.IsCancellationRequested) break;
+                    if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+                        Directory.Delete(folder);
+                }
+                catch
+                {
+                    // Klasör başka bir işlem tarafından kullanılıyor; bir sonraki temizlikte silinir.
+                }
+            }
+        }
 
-                    var p = pages[i];
-                    if (!File.Exists(p.FilePath)) continue;
+        private static bool IsInsideScanTemp(string path)
+        {
+            try
+            {
+                string root = Path.GetFullPath(ScanTempDir) + Path.DirectorySeparatorChar;
+                return Path.GetFullPath(path).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
-                    using var xImg = XImage.FromFile(p.FilePath);
-                    var page = doc.AddPage();
-                    page.Width = xImg.PointWidth;
-                    page.Height = xImg.PointHeight;
+        private static string CreateSessionFolder(string prefix)
+        {
+            // Aynı saniyede açılan iki oturum çakışmasın diye kısa bir rastgele ek.
+            string suffix = Guid.NewGuid().ToString("N")[..8];
+            string folder = Path.Combine(ScanTempDir, $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss}_{suffix}");
+            Directory.CreateDirectory(folder);
+            return folder;
+        }
 
-                    using var gfx = XGraphics.FromPdfPage(page);
+        /// <summary>
+        /// Önceki oturumlardan kalan sayfa görüntülerini ve PDF Studio'ya aktarım kopyalarını temizler.
+        /// 300 DPI renkli bir sayfa ~20 MB tuttuğu için temizlenmezse geçici klasör hızla dolar.
+        /// </summary>
+        private static void PurgeStaleTempFiles()
+        {
+            try
+            {
+                DateTime limit = DateTime.Now - StaleSessionAge;
 
-                    // Sayfa döndürme ayarı
-                    if (p.Rotation == 90 || p.Rotation == 180 || p.Rotation == 270)
+                foreach (string folder in Directory.EnumerateDirectories(ScanTempDir))
+                {
+                    try
                     {
-                        page.Orientation = (p.Rotation == 90 || p.Rotation == 270) ? PdfSharp.PageOrientation.Landscape : PdfSharp.PageOrientation.Portrait;
+                        if (Directory.GetLastWriteTime(folder) < limit)
+                            Directory.Delete(folder, recursive: true);
                     }
-
-                    gfx.DrawImage(xImg, 0, 0, page.Width, page.Height);
-
-                    int pct = (int)(((i + 1) / (double)pages.Count) * 100);
-                    progress?.Report(pct);
+                    catch
+                    {
+                        // Kullanımda olabilir.
+                    }
                 }
 
-                doc.Save(outputPath);
-                return outputPath;
-            }, cancellationToken);
+                foreach (string file in Directory.EnumerateFiles(Path.GetTempPath(), "DocMaster_Scanned_*.pdf"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTime(file) < limit)
+                            File.Delete(file);
+                    }
+                    catch
+                    {
+                        // Kullanımda olabilir.
+                    }
+                }
+            }
+            catch
+            {
+                // Temizlik en iyi çaba ile yapılır; taramayı engellememeli.
+            }
+        }
+
+        /// <summary>
+        /// WIA Automation nesneleri apartment-threaded'dir ve tarama penceresi ileti döngüsü ister;
+        /// bu yüzden tarama iş parçacığı havuzunda (MTA) değil, kendi STA iş parçacığında yürütülür.
+        /// </summary>
+        private static Task<T> RunOnStaThreadAsync<T>(Func<T> work)
+        {
+            var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    completion.SetResult(work());
+                }
+                catch (Exception ex)
+                {
+                    completion.SetException(ex);
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "DocMaster WIA Scan"
+            };
+
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            return completion.Task;
+        }
+
+        private static ScannedPageItem LoadScannedPageItem(string filePath, int pageNumber, int dpi)
+        {
+            BitmapSource? preview = null;
+
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
+                bitmap.DecodePixelWidth = 900;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                preview = bitmap;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError($"Tarama önizlemesi yüklenemedi ({filePath})", ex);
+            }
+
+            return new ScannedPageItem
+            {
+                PageNumber = pageNumber,
+                FilePath = filePath,
+                PreviewImage = preview,
+                ResolutionDpi = dpi,
+                FileSize = new FileInfo(filePath).Length,
+                Rotation = 0
+            };
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+                // Dosya kullanımda; eski oturum temizliği daha sonra siler.
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, recursive: true);
+            }
+            catch
+            {
+                // Bir sonraki temizlikte silinir.
+            }
         }
     }
 }

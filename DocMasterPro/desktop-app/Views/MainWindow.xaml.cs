@@ -22,6 +22,25 @@ namespace DocConverter.Views
             InitializeComponent();
             Title = "DocMaster Pro - PDF Studio";
             Loaded += MainWindow_Loaded;
+            Closing += MainWindow_Closing;
+            Closed += MainWindow_Closed;
+        }
+
+        private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // PDF Studio'da kaydedilmemiş açıklamalar varsa pencere sormadan kapanmasın.
+            if (DataContext is MainViewModel vm && !vm.PdfStudio.ConfirmDiscardChanges("Uygulama kapatılırsa"))
+            {
+                vm.SelectedAppSection = 3;
+                e.Cancel = true;
+            }
+        }
+
+        private void MainWindow_Closed(object? sender, EventArgs e)
+        {
+            // Açık PDF'in render oturumunu ve geçici çalışma kopyalarını bırak.
+            if (DataContext is MainViewModel vm)
+                vm.PdfStudio.Dispose();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
