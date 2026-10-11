@@ -16,6 +16,33 @@ namespace DocConverter.Services
     /// </summary>
     public class PdfService
     {
+        /// <summary>
+        /// Belgeyi kendi dosyasının üzerine güvenle kaydeder: önce aynı klasörde geçici bir dosyaya yazar,
+        /// sonra tek adımda yerine koyar. PDFsharp doğrudan hedefe yazarken dosyayı önce sıfırlar;
+        /// kayıt yarıda kesilirse (çökme, disk dolu, hata) kullanıcının tek kopyası yok olurdu.
+        /// </summary>
+        public static void SaveInPlace(PdfDocument document, string path)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+
+            string fullPath = Path.GetFullPath(path);
+            string tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+
+            try
+            {
+                document.Save(tempPath);
+
+                if (new FileInfo(tempPath).Length == 0)
+                    throw new IOException("PDF çıktısı oluşturulamadı; özgün dosya değiştirilmedi.");
+
+                File.Move(tempPath, fullPath, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            }
+        }
+
         private static readonly AsyncRetryPolicy RetryPolicy = Policy
             .Handle<IOException>()
             .Or<PdfReaderException>()
@@ -254,12 +281,12 @@ namespace DocConverter.Services
                     page.Rotate = (page.Rotate + degrees) % 360;
                 }
 
-                doc.Save(sourcePath);
+                SaveInPlace(doc, sourcePath);
             }, cancellationToken);
         }
 
         /// <summary>
-        /// PDF iÃ§indeki bir sayfayÄ± yeni pozisyona taÅŸÄ±r.
+        /// PDF içindeki bir sayfayı yeni pozisyona taşır.
         /// </summary>
         public async Task MovePageAsync(
             string pdfPath,
@@ -268,10 +295,10 @@ namespace DocConverter.Services
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(pdfPath))
-                throw new ArgumentException("PDF dosya yolu boÅŸ olamaz.", nameof(pdfPath));
+                throw new ArgumentException("PDF dosya yolu boş olamaz.", nameof(pdfPath));
 
             if (!File.Exists(pdfPath))
-                throw new FileNotFoundException("PDF dosyasÄ± bulunamadÄ±.", pdfPath);
+                throw new FileNotFoundException("PDF dosyası bulunamadı.", pdfPath);
 
             await Task.Run(() =>
             {
@@ -290,10 +317,10 @@ namespace DocConverter.Services
                     {
                         pageCount = sourceDoc.PageCount;
                         if (fromIndex < 0 || fromIndex >= pageCount)
-                            throw new ArgumentOutOfRangeException(nameof(fromIndex), "Kaynak sayfa indeksi geÃ§ersiz.");
+                            throw new ArgumentOutOfRangeException(nameof(fromIndex), "Kaynak sayfa indeksi geçersiz.");
 
                         if (toIndex < 0 || toIndex >= pageCount)
-                            throw new ArgumentOutOfRangeException(nameof(toIndex), "Hedef sayfa indeksi geÃ§ersiz.");
+                            throw new ArgumentOutOfRangeException(nameof(toIndex), "Hedef sayfa indeksi geçersiz.");
 
                         if (fromIndex == toIndex)
                             return;
@@ -317,7 +344,7 @@ namespace DocConverter.Services
                     }
 
                     if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
-                        throw new IOException("TaÅŸÄ±nan PDF kaydedilemedi.");
+                        throw new IOException("Taşınan PDF kaydedilemedi.");
 
                     cancellationToken.ThrowIfCancellationRequested();
                     File.Replace(tempPath, pdfPath, backupPath, ignoreMetadataErrors: true);

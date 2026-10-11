@@ -159,10 +159,11 @@ namespace DocConverter.Services
 
                     try
                     {
-                        pptApp = new PowerPoint.Application
-                        {
-                            Visible = Microsoft.Office.Core.MsoTriState.msoFalse
-                        };
+                        // PowerPoint, Visible = msoFalse atamasını reddeder ("Hiding the application window is
+                        // not allowed"). Atama nesne başlatıcısında yapıldığında değişken null kalıyor, Quit hiç
+                        // çağrılmıyor ve gizli bir POWERPNT.EXE arkada kalıyordu. Sunum WithWindow: msoFalse ile
+                        // açıldığı için pencere zaten görünmez.
+                        pptApp = new PowerPoint.Application();
 
                         presentation = pptApp.Presentations.Open(
                             FileName: inputPath,
@@ -179,12 +180,18 @@ namespace DocConverter.Services
                     {
                         if (presentation != null)
                         {
-                            presentation.Close();
+                            try { presentation.Close(); } catch { }
                             Marshal.ReleaseComObject(presentation);
                         }
                         if (pptApp != null)
                         {
-                            pptApp.Quit();
+                            // PowerPoint tek örnek çalışır: kullanıcının açık bir sunumu varsa uygulamayı kapatma.
+                            try
+                            {
+                                if (pptApp.Presentations.Count == 0)
+                                    pptApp.Quit();
+                            }
+                            catch { }
                             Marshal.ReleaseComObject(pptApp);
                         }
                         GC.Collect();

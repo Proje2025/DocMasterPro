@@ -15,6 +15,12 @@ namespace DocConverter.Services
     public class BlankPageDetector
     {
         /// <summary>
+        /// Bir sayfanın boş sayılabilmesi için koyu (mürekkep) piksellerin en fazla oranı (%).
+        /// Toz, delgeç deliği gölgesi ve arka yüzden vuran yazı bu sınırın altında kalır.
+        /// </summary>
+        private const double MaxInkPercentForBlank = 0.02;
+
+        /// <summary>
         /// Resim dosyasının boş/beyaz olup olmadığını piksel yoğunluğu analiziyle kontrol eder.
         /// </summary>
         /// <param name="imagePath">Analiz edilecek resmin yolu</param>
@@ -42,11 +48,11 @@ namespace DocConverter.Services
         /// </summary>
         private static bool IsImageSharpBlank(Image<Rgb24> image, double whiteThresholdPercent, byte luminanceThreshold)
         {
-            int totalPixels = image.Width * image.Height;
+            long totalPixels = (long)image.Width * image.Height;
             if (totalPixels == 0) return true;
 
-            long whitePixelCount = 0;
-
+            // 1. geçiş: parlaklık dağılımı. Kağıdın rengi buradan ölçülür.
+            var histogram = new long[256];
             image.ProcessPixelRows(accessor =>
             {
                 for (int y = 0; y < accessor.Height; y++)
@@ -56,14 +62,45 @@ namespace DocConverter.Services
                     {
                         ref readonly var pixel = ref row[x];
                         // Parlaklık / Gri ton hesaplama (BT.601 standardı)
-                        int luminance = (pixel.R * 299 + pixel.G * 587 + pixel.B * 114) / 1000;
-                        if (luminance >= luminanceThreshold)
-                        {
-                            whitePixelCount++;
-                        }
+                        histogram[(pixel.R * 299 + pixel.G * 587 + pixel.B * 114) / 1000]++;
                     }
                 }
             });
+
+            // Kağıt rengi = medyan parlaklık. Taranan kağıt nadiren saf beyazdır (240'ın altında olabilir);
+            // sabit eşik kullanıldığında böyle sayfalar hiçbir zaman boş sayılmıyordu.
+            int paper = 255;
+            long cumulative = 0;
+            for (int level = 0; level < 256; level++)
+            {
+                cumulative += histogram[level];
+                if (cumulative * 2 >= totalPixels)
+                {
+                    paper = level;
+                    break;
+                }
+            }
+
+            // Çoğunluğu koyu olan sayfa (fotoğraf, koyu kapak) boş değildir.
+            if (paper < 128)
+                return false;
+
+            int whiteLevel = Math.Min(luminanceThreshold, paper - 16);
+            int inkLevel = Math.Min(160, paper - 70);
+
+            long whitePixelCount = 0;
+            long inkPixelCount = 0;
+            for (int level = 0; level < 256; level++)
+            {
+                if (level >= whiteLevel) whitePixelCount += histogram[level];
+                if (level < inkLevel) inkPixelCount += histogram[level];
+            }
+
+            // Mürekkep oranı: tek satır yazı bile sayfanın ~%0,05'ini kaplar. Yalnızca "beyaz oranına"
+            // bakmak, üç satırlık bir sayfayı ya da imza sayfasını (%98,6 beyaz) boş sayıp siliyordu.
+            double inkRatio = (double)inkPixelCount / totalPixels * 100.0;
+            if (inkRatio >= MaxInkPercentForBlank)
+                return false;
 
             double whiteRatio = (double)whitePixelCount / totalPixels * 100.0;
             return whiteRatio >= whiteThresholdPercent;

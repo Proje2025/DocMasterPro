@@ -264,9 +264,9 @@
                 <ComboBox SelectedValue="{Binding ScanOptions.Source}"
                           SelectedValuePath="Tag"
                           Padding="8,6" Margin="0,0,0,14">
-                  <ComboBoxItem Content="📄 ADF - Otomatik Besleyici (Tek Yüz)" Tag="{x:Static models:ScanSource.FeederSingle}" IsSelected="True"/>
-                  <ComboBoxItem Content="📑 ADF - Otomatik Besleyici (Çift Yüz / Duplex)" Tag="{x:Static models:ScanSource.FeederDuplex}"/>
-                  <ComboBoxItem Content="🔲 Cam / Düz Yatak (Flatbed)" Tag="{x:Static models:ScanSource.Flatbed}"/>
+                  <ComboBoxItem Content="📄 Besleyici (ADF) — tek yüz" Tag="{x:Static models:ScanSource.FeederSingle}" IsSelected="True"/>
+                  <ComboBoxItem Content="📑 Besleyici (ADF) — çift yüz" Tag="{x:Static models:ScanSource.FeederDuplex}"/>
+                  <ComboBoxItem Content="🔲 Cam (düz yatak)" Tag="{x:Static models:ScanSource.Flatbed}"/>
                 </ComboBox>
 
                 <!-- Çözünürlük (DPI) -->
@@ -290,16 +290,32 @@
                   <ComboBoxItem Content="⬛ 1-bit Siyah-Beyaz Metin" Tag="{x:Static models:ScanColorMode.BlackAndWhite}"/>
                 </ComboBox>
 
+                <!-- PDF çıktı kalitesi: kaydedilen dosyanın boyutunu belirler -->
+                <TextBlock Text="PDF Dosya Boyutu / Kalite:" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,4"/>
+                <ComboBox SelectedValue="{Binding ScanOptions.OutputQuality}"
+                          SelectedValuePath="Tag"
+                          Padding="8,6" Margin="0,0,0,4"
+                          ToolTip="Tarama çözünürlüğünden bağımsızdır. Sayfalar PDF'e yazılırken bu profile göre sıkıştırılır.">
+                  <ComboBoxItem Content="Küçük dosya (e-posta, 150 DPI)" Tag="{x:Static models:ScanOutputQuality.Small}"/>
+                  <ComboBoxItem Content="Dengeli (önerilen, 200 DPI)" Tag="{x:Static models:ScanOutputQuality.Balanced}" IsSelected="True"/>
+                  <ComboBoxItem Content="Yüksek kalite (baskı, 300 DPI)" Tag="{x:Static models:ScanOutputQuality.High}"/>
+                  <ComboBoxItem Content="Kayıpsız (çok büyük dosya)" Tag="{x:Static models:ScanOutputQuality.Lossless}"/>
+                </ComboBox>
+                <TextBlock Text="Kaydederken uygulanır; aynı taramayı farklı kaliteyle yeniden kaydedebilirsiniz."
+                           FontSize="11" Foreground="#64748B" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
                 <!-- Otomatik Düzeltmeler & Boş Sayfa -->
                 <CheckBox Content="Boş Sayfaları Otomatik Olarak Sil"
                           IsChecked="{Binding ScanOptions.RemoveBlankPages}"
                           FontWeight="SemiBold"
                           Margin="0,0,0,8"/>
-                <CheckBox Content="Otomatik eğrilik düzeltme (Deskew)"
+                <CheckBox Content="Eğik sayfaları düzelt (Deskew)"
                           IsChecked="{Binding ScanOptions.AutoDeskew}"
+                          ToolTip="PDF kaydedilirken satırların eğimi ölçülür ve sayfa düzeltilir."
                           Margin="0,0,0,8"/>
-                <CheckBox Content="Kenar boşluklarını kırp (Auto-Crop)"
+                <CheckBox Content="Koyu zemini kırp (Auto-Crop)"
                           IsChecked="{Binding ScanOptions.AutoCrop}"
+                          ToolTip="PDF kaydedilirken sayfanın çevresinde kalan siyah zemin kırpılır. Beyaz kenar boşluklarına dokunulmaz."
                           Margin="0,0,0,16"/>
 
                 <!-- Tarama Başlat Butonu -->
@@ -308,8 +324,15 @@
                         Command="{Binding StartScanCommand}"
                         HorizontalAlignment="Stretch" Margin="0,0,0,8" Height="42" FontSize="14"/>
 
+                <Button Content="■ Taramayı Durdur"
+                        Style="{StaticResource SecondaryActionBtn}"
+                        Command="{Binding CancelScanCommand}"
+                        Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}"
+                        Foreground="#B91C1C"
+                        HorizontalAlignment="Stretch" Margin="0,0,0,8" Height="36"/>
+
                 <!-- Windows Native WIA Tarama Butonu -->
-                <Button Content="🪟 Windows Tarama Penceresini Aç (WIA)"
+                <Button Content="Windows Tarama Penceresini Aç (WIA)"
                         Style="{StaticResource SecondaryActionBtn}"
                         Command="{Binding OpenWiaNativeScanDialogCommand}"
                         HorizontalAlignment="Stretch" Margin="0,0,0,8" Height="36" FontSize="12"
@@ -379,7 +402,12 @@
                               <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <Image Grid.Column="0" Source="{Binding PreviewImage}" MaxHeight="70" Stretch="Uniform"/>
+                            <Image Grid.Column="0" Source="{Binding PreviewImage}" MaxHeight="70" MaxWidth="60" Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality">
+                              <Image.LayoutTransform>
+                                <RotateTransform Angle="{Binding Rotation}"/>
+                              </Image.LayoutTransform>
+                            </Image>
 
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
                               <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="13"/>
@@ -401,9 +429,16 @@
                 <!-- Büyük Önizleme Paneli -->
                 <Border Grid.Column="1" Background="#F1F5F9" CornerRadius="8" Padding="12">
                   <Grid>
-                    <Image Source="{Binding SelectedScannedPage.PreviewImage}"
-                           Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <!-- Viewbox, döndürülmüş sayfanın da panele sığmasını sağlar -->
+                    <Viewbox Stretch="Uniform">
+                      <Image Source="{Binding SelectedScannedPage.PreviewImage}"
+                             Stretch="None"
+                             RenderOptions.BitmapScalingMode="HighQuality">
+                        <Image.LayoutTransform>
+                          <RotateTransform Angle="{Binding SelectedScannedPage.Rotation, FallbackValue=0, TargetNullValue=0}"/>
+                        </Image.LayoutTransform>
+                      </Image>
+                    </Viewbox>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
                       <Button Content="↻ 90° Döndür"

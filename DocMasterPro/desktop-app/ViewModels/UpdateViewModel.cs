@@ -85,26 +85,7 @@ namespace DocConverter.ViewModels
             try
             {
                 var result = await _updateService.CheckForUpdatesAsync(_cts.Token);
-                _checkResult = result;
-
-                CurrentVersion = result.CurrentVersion;
-                LatestVersion = result.LatestVersion;
-                ReleaseTitle = result.ReleaseTitle;
-                ReleaseNotes = result.ReleaseNotes;
-                PublishedDateText = result.PublishedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "";
-
-                if (result.HasUpdate)
-                {
-                    State = UpdateState.UpdateAvailable;
-                    StageTitle = "Yeni Bir Sürüm Mevcut!";
-                    StageDescription = $"DocMaster Pro v{LatestVersion} indirilebilir.";
-                }
-                else
-                {
-                    State = UpdateState.UpToDate;
-                    StageTitle = "Uygulamanız Güncel";
-                    StageDescription = $"En güncel sürümü (v{CurrentVersion}) kullanıyorsunuz.";
-                }
+                ShowCheckResult(result);
             }
             catch (OperationCanceledException)
             {
@@ -122,6 +103,36 @@ namespace DocConverter.ViewModels
             {
                 IsBusy = false;
                 CanCancel = false;
+            }
+        }
+
+        /// <summary>
+        /// Bir güncelleme denetiminin sonucunu gösterir. Açılıştaki otomatik denetim de bunu kullanır;
+        /// sonuç burada saklanmazsa "Şimdi Güncelle" hangi sürümü indireceğini bilemez.
+        /// </summary>
+        public void ShowCheckResult(UpdateCheckResult result)
+        {
+            ArgumentNullException.ThrowIfNull(result);
+
+            _checkResult = result;
+            CurrentVersion = result.CurrentVersion;
+            LatestVersion = result.LatestVersion;
+            ReleaseTitle = result.ReleaseTitle;
+            ReleaseNotes = result.ReleaseNotes;
+            PublishedDateText = result.PublishedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "";
+            ErrorMessage = "";
+
+            if (result.HasUpdate)
+            {
+                State = UpdateState.UpdateAvailable;
+                StageTitle = "Yeni Bir Sürüm Mevcut!";
+                StageDescription = $"DocMaster Pro v{LatestVersion} indirilebilir.";
+            }
+            else
+            {
+                State = UpdateState.UpToDate;
+                StageTitle = "Uygulamanız Güncel";
+                StageDescription = $"En güncel sürümü (v{CurrentVersion}) kullanıyorsunuz.";
             }
         }
 

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Threading;
 using DocConverter.Helpers;
 using DocConverter.Services;
 using DocConverter.Views;
@@ -24,9 +25,22 @@ namespace DocConverter
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            RegisterGlobalExceptionHandlers();
+
             // PDFsharp için font resolver ayarla
             GlobalFontSettings.FontResolver = new WindowsFontResolver();
             WindowsFileAssociationService.RegisterPdfOpenWithForCurrentUser();
+
+            // PDFium'u baştan yükle: tek dosya (single-file) yayında PdfiumViewer kendi başına bulamaz ve
+            // ilk PDF işlemi yazdırma olursa "pdfium.dll yüklenemedi" hatası verirdi.
+            try
+            {
+                PdfiumNativeLoader.EnsureLoaded();
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogError("PDFium yüklenemedi", ex);
+            }
 
             base.OnStartup(e);
 
@@ -42,6 +56,42 @@ namespace DocConverter
             }
 
             window.Show();
+        }
+
+        /// <summary>
+        /// Yakalanmamış hatalar uygulamayı sessizce kapatmasın: kaydedilir, kullanıcıya gösterilir
+        /// ve mümkünse uygulama açık kalır (taranmış ama kaydedilmemiş sayfalar kaybolmasın).
+        /// </summary>
+        private void RegisterGlobalExceptionHandlers()
+        {
+            DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+            TaskScheduler.UnobservedTaskException += (_, args) =>
+            {
+                FileLogger.LogError("Gözlenmeyen görev hatası", args.Exception);
+                args.SetObserved();
+            };
+
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                if (args.ExceptionObject is Exception ex)
+                    FileLogger.LogError("Kritik hata (uygulama kapanıyor)", ex);
+            };
+        }
+
+        private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            FileLogger.LogError("Beklenmeyen hata", e.Exception);
+            e.Handled = true;
+
+            MessageBox.Show(
+                "Beklenmeyen bir hata oluştu, işlem tamamlanamadı:\n\n" +
+                e.Exception.Message +
+                "\n\nUygulama açık kalacak. Ayrıntılar günlük dosyasına kaydedildi:\n" +
+                FileLogger.LogFilePath,
+                "DocMaster Pro",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
     }
 }

@@ -80,7 +80,10 @@ namespace DocConverter.Tests
             options.Resolution.Should().Be(ScanResolution.Dpi300);
             options.ColorMode.Should().Be(ScanColorMode.Color);
             options.Source.Should().Be(ScanSource.FeederSingle);
-            options.AutoDeskew.Should().BeTrue();
+            options.OutputQuality.Should().Be(ScanOutputQuality.Balanced);
+            // Sayfa piksellerini değiştiren düzeltmeler kullanıcı açmadıkça uygulanmaz.
+            options.AutoDeskew.Should().BeFalse();
+            options.AutoCrop.Should().BeFalse();
         }
 
         [Fact]
