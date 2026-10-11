@@ -155,7 +155,7 @@ namespace DocConverter.ViewModels
             }
             catch (OperationCanceledException)
             {
-                // İptal: kullanıcı onay ekranına döner, yarım kalan dosyalar kurulum servisi tarafından silinir.
+                // İptal: kullanıcı onay ekranına döner. Yarım indirme saklanır ve sonraki denemede kaldığı yerden sürer.
                 State = EngineSetupState.Consent;
             }
             catch (EngineSetupException ex)

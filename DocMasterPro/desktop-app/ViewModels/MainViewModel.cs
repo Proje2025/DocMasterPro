@@ -190,10 +190,10 @@ namespace DocConverter.ViewModels
         public bool ShowWordRequiredNotice => !OfficeEngine.CanConvertPdfToWord;
 
         /// <summary>
-        /// LibreOffice'i indirip hazırlayan servis. Henüz kullanılamıyorsa null döner ve motor bulunamadığında
+        /// LibreOffice'i indirip hazırlayan servis. Null dönerse indirme önerilmez; motor bulunamadığında
         /// kullanıcıya ne kurması gerektiği söylenir.
         /// </summary>
-        internal Func<IOfficeEngineInstaller?> EngineInstallerFactory { get; set; } = () => null;
+        internal Func<IOfficeEngineInstaller?> EngineInstallerFactory { get; set; } = () => new LibreOfficeEngineInstaller();
 
         /// <summary>Motor göstergesini bilgisayarın şu anki durumuna göre yeniler.</summary>
         public void RefreshOfficeEngine()
@@ -244,9 +244,9 @@ namespace DocConverter.ViewModels
         }
 
         [RelayCommand]
-        private void RemoveDownloadedEngine()
+        private async Task RemoveDownloadedEngine()
         {
-            if (!OfficeEngine.CanRemove)
+            if (!OfficeEngine.CanRemove || IsBusy)
                 return;
 
             var answer = MessageBox.Show(
@@ -254,8 +254,22 @@ namespace DocConverter.ViewModels
                 "Disk alanı boşalır. Microsoft Office kurulu değilse bir sonraki Office → PDF dönüştürmesinde yeniden indirmeniz istenir.",
                 "DocMaster Pro", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
-            if (answer == MessageBoxResult.Yes)
-                OfficeEngine = new OfficeEngineStatus(OfficeEngineKind.None);
+            if (answer != MessageBoxResult.Yes || EngineInstallerFactory() is not { } installer)
+                return;
+
+            try
+            {
+                await installer.RemoveAsync();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                FileLogger.LogError("LibreOffice kopyası silinemedi", ex);
+                MessageBox.Show(
+                    "LibreOffice kopyasının tamamı silinemedi; şu anda bir dönüştürmede kullanılıyor olabilir. Biraz sonra yeniden deneyin.",
+                    "DocMaster Pro", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            RefreshOfficeEngine();
         }
 
         /// <summary>

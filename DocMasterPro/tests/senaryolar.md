@@ -28,6 +28,15 @@ buraya, testi de `DocConverter.Tests` projesine eklenir. Tümünü çalıştırm
 | 19 | Eski ANSI kodlamalı metin dosyasında Türkçe karakterler korunur | `LibreOfficeRealConversionTests.PlainText_SavedInTheOldAnsiEncoding_KeepsTurkishCharacters` |
 | 20 | Office ile dönüştürmeden sonra arkada gizli Word / Excel / PowerPoint kalmaz | `OfficeAutomationTests.*_ConvertsAndLeavesNoHiddenProcessBehind` (gerçek Office) |
 | 21 | Motor göstergesi bilgisayarın gerçek durumunu gösterir; Word yoksa PDF → Word açıklaması görünür | `MainViewModelOfficeEngineTests.*` |
+| 22 | LibreOffice indirilir, doğrulanır, hazırlanır; iş bitince kurulum dosyası silinir | `LibreOfficeEngineInstallerTests.Install_DownloadsVerifiesAndPreparesTheEngine` |
+| 23 | İndirme yarıda kesilir → sonraki denemede kaldığı yerden sürer | `LibreOfficeEngineInstallerTests.InterruptedDownload_ResumesWhereItStopped`, `NoConnection_ReportsDownloadFailed_AndKeepsWhatWasDownloaded` |
+| 24 | Resmî adres yanıt vermez → kalıcı arşiv adresinden indirilir | `LibreOfficeEngineInstallerTests.FirstSourceDown_FallsBackToTheArchive` |
+| 25 | Dosya değiştirilmiş ya da imzası başka yayıncıya ait → silinir, hiçbir şey çalıştırılmaz | `LibreOfficeEngineInstallerTests.TamperedFile_IsDeletedAndNothingIsRun`, `WrongPublisherOrBrokenSignature_IsDeletedAndNothingIsRun`, `AuthenticodeVerifierTests.*` |
+| 26 | Yeterli disk alanı yok → indirme başlamadan söylenir | `LibreOfficeEngineInstallerTests.NotEnoughSpace_FailsBeforeDownloadingAnything` |
+| 27 | Açma başarısız olur ya da iptal edilir → yarım hazırlanmış motor kalmaz | `LibreOfficeEngineInstallerTests.ExtractionFailure_LeavesNoHalfPreparedEngine`, `Cancel_DuringExtraction_LeavesNoHalfPreparedEngine_AndSkipsTheDownloadNextTime` |
+| 28 | Kullanıcı indirilen motoru kaldırır → dosyalar silinir | `LibreOfficeEngineInstallerTests.Remove_DeletesTheEngineAndFreesTheSpace` |
+| 29 | Gerçek indirme: internetten indir → doğrula → aç → belge dönüştür → kaldır | `EngineInstallEndToEndTests.RealDownload_IsVerifiedPreparedAndConvertsADocument` (yalnızca `DOCMASTER_E2E_ENGINE` bir klasör gösterdiğinde çalışır; 356 MB indirir) |
+| 30 | Uygulama güncellemesi: kurulum dosyası yalnızca resmî depodan alınır, özeti tutmazsa silinir ve çalıştırılmaz | `UpdateInstallerVerificationTests.*` |
 
 Gerçek LibreOffice ve gerçek Office gerektiren testler, ilgili program bulunamazsa atlanır. LibreOffice için sırayla
 `DOCMASTER_TEST_SOFFICE` ortam değişkenindeki program klasörüne, bilgisayarda kurulu kopyaya ve

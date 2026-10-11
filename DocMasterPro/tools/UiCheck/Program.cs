@@ -342,6 +342,8 @@ public static class Program
             }
         }
 
+        public Task RemoveAsync() => Task.CompletedTask;
+
         public void Release() => _hold.TrySetResult();
     }
 }

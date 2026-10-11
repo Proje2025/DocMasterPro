@@ -96,6 +96,9 @@ namespace DocConverter.Models
         public DateTime? PublishedAt { get; set; }
         public string? SetupDownloadUrl { get; set; }
         public long? SetupFileSize { get; set; }
+
+        /// <summary>Kurulum dosyasının GitHub'ın bildirdiği SHA-256 özeti; indirilen dosya bununla doğrulanır.</summary>
+        public string? SetupSha256 { get; set; }
         public string? HtmlUrl { get; set; }
         public UpdateInfo? VelopackUpdate { get; set; }
         public UpdateInstallMethod RecommendedMethod { get; set; } = UpdateInstallMethod.DirectInstaller;
@@ -142,5 +145,9 @@ namespace DocConverter.Models
 
         [JsonPropertyName("content_type")]
         public string? ContentType { get; set; }
+
+        /// <summary>GitHub'ın dosya için hesapladığı özet, "sha256:…" biçiminde.</summary>
+        [JsonPropertyName("digest")]
+        public string? Digest { get; set; }
     }
 }

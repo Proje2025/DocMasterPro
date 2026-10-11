@@ -18,11 +18,14 @@ namespace DocConverter.Services
         /// Başarısızlıkta <see cref="EngineSetupException"/>, iptalde OperationCanceledException fırlatır.
         /// </summary>
         Task InstallAsync(IProgress<EngineSetupProgress> progress, CancellationToken cancellationToken);
+
+        /// <summary>İndirilen motoru ve yarım kalmış indirmeleri siler; disk alanını geri verir.</summary>
+        Task RemoveAsync();
     }
 
     /// <summary>
     /// Arayüz geliştirme ve testler için sahte kurulum: gerçek indirme yapmaz, aşamaları taklit eder.
-    /// Gerçek uygulama "Güvenli indirme" fazında yazılacak.
+    /// Gerçek kurulum <see cref="LibreOfficeEngineInstaller"/> sınıfındadır.
     /// </summary>
     public sealed class MockOfficeEngineInstaller : IOfficeEngineInstaller
     {
@@ -46,6 +49,14 @@ namespace DocConverter.Services
         public TimeSpan StepDelay { get; set; } = TimeSpan.FromMilliseconds(120);
 
         public int InstallCalls { get; private set; }
+
+        public int RemoveCalls { get; private set; }
+
+        public Task RemoveAsync()
+        {
+            RemoveCalls++;
+            return Task.CompletedTask;
+        }
 
         public EngineSetupRequirements GetRequirements() => Requirements;
 

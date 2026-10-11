@@ -231,6 +231,8 @@ public class OfficeEngineSetupTests
 
         public Task InstallAsync(IProgress<EngineSetupProgress> progress, CancellationToken cancellationToken) =>
             Task.FromException(_error);
+
+        public Task RemoveAsync() => Task.CompletedTask;
     }
 
     /// <summary>İptal edilene kadar bekleyen kurulum; ara durumları sınamak için.</summary>
@@ -239,6 +241,8 @@ public class OfficeEngineSetupTests
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public EngineSetupProgress? Report { get; init; }
         public bool WasCancelled { get; private set; }
+
+        public Task RemoveAsync() => Task.CompletedTask;
 
         public EngineSetupRequirements GetRequirements() =>
             new("26.2.6", 373 * MB, 2048 * MB, 100L * 1024 * MB, "C:", "The Document Foundation");

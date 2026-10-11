@@ -18,11 +18,11 @@ namespace DocConverter.Services
     {
         private const string PrimaryRepoOwner = "Proje2025";
         private const string PrimaryRepoName = "DocMasterPro";
-        private const string FallbackRepoOwner = "ahiska03";
-        private const string FallbackRepoName = "DocMasterPro";
 
         public static string PrimaryRepoUrl => $"https://github.com/{PrimaryRepoOwner}/{PrimaryRepoName}";
-        public static string FallbackRepoUrl => $"https://github.com/{FallbackRepoOwner}/{FallbackRepoName}";
+
+        /// <summary>Kurulum dosyası yalnızca resmî deponun sürüm dosyaları arasından indirilir.</summary>
+        private static string TrustedDownloadPrefix => $"{PrimaryRepoUrl}/releases/download/";
 
         private readonly HttpClient _httpClient;
 
@@ -61,11 +61,9 @@ namespace DocConverter.Services
             };
 
             // 1. GitHub Releases API'den en son sürüm bilgilerini al
+            // Yalnızca resmî depo sorgulanır. Başka bir hesaptaki kopyaya düşülmez: o hesabı yöneten kişi
+            // kullanıcılara kurulum dosyası dağıtabilirdi.
             GitHubReleaseDto? release = await FetchLatestGitHubReleaseAsync(PrimaryRepoOwner, PrimaryRepoName, cancellationToken);
-            if (release == null)
-            {
-                release = await FetchLatestGitHubReleaseAsync(FallbackRepoOwner, FallbackRepoName, cancellationToken);
-            }
 
             if (release != null)
             {
@@ -78,30 +76,11 @@ namespace DocConverter.Services
                 result.PublishedAt = release.PublishedAt;
                 result.HtmlUrl = release.HtmlUrl ?? $"{PrimaryRepoUrl}/releases";
 
-                // Uygun kurulum varlığını bul (Setup.exe veya Zip)
-                if (release.Assets != null)
+                if (SelectInstaller(release) is { } installer)
                 {
-                    foreach (var asset in release.Assets)
-                    {
-                        if (string.IsNullOrWhiteSpace(asset.Name)) continue;
-
-                        if (asset.Name.EndsWith("Setup.exe", StringComparison.OrdinalIgnoreCase))
-                        {
-                            result.SetupDownloadUrl = asset.BrowserDownloadUrl;
-                            result.SetupFileSize = asset.Size;
-                            break;
-                        }
-                        if (asset.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && result.SetupDownloadUrl == null)
-                        {
-                            result.SetupDownloadUrl = asset.BrowserDownloadUrl;
-                            result.SetupFileSize = asset.Size;
-                        }
-                        else if (asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && result.SetupDownloadUrl == null)
-                        {
-                            result.SetupDownloadUrl = asset.BrowserDownloadUrl;
-                            result.SetupFileSize = asset.Size;
-                        }
-                    }
+                    result.SetupDownloadUrl = installer.BrowserDownloadUrl;
+                    result.SetupFileSize = installer.Size;
+                    result.SetupSha256 = ParseSha256Digest(installer.Digest);
                 }
             }
 
@@ -201,19 +180,22 @@ namespace DocConverter.Services
             }
 
             // Katman 2: Doğrudan Kurulum Dosyası (Setup.exe) İndirip Çalıştırma
-            if (string.IsNullOrWhiteSpace(updateResult.SetupDownloadUrl))
+            if (string.IsNullOrWhiteSpace(updateResult.SetupDownloadUrl) || !IsTrustedInstallerUrl(updateResult.SetupDownloadUrl))
             {
                 throw new InvalidOperationException(
                     "Güncelleme kurulum dosyası sunucuda bulunamadı. Lütfen GitHub sürüm sayfasından manuel olarak indiriniz.");
             }
 
+            if (string.IsNullOrWhiteSpace(updateResult.SetupSha256))
+            {
+                // Özeti bilinmeyen bir dosya doğrulanamaz; doğrulanamayan dosya da çalıştırılmaz.
+                throw new InvalidOperationException(
+                    "Kurulum dosyasının doğrulama bilgisi alınamadı. Lütfen GitHub sürüm sayfasından manuel olarak indiriniz.");
+            }
+
             string tempDir = Path.Combine(Path.GetTempPath(), "DocMasterProUpdates");
             Directory.CreateDirectory(tempDir);
-            string setupFileName = Path.GetFileName(new Uri(updateResult.SetupDownloadUrl).LocalPath);
-            if (string.IsNullOrWhiteSpace(setupFileName))
-                setupFileName = $"DocMasterPro-v{updateResult.LatestVersion}-Setup.exe";
-
-            string destinationPath = Path.Combine(tempDir, setupFileName);
+            string destinationPath = Path.Combine(tempDir, "DocMasterPro-Setup.exe");
 
             progress.Report(new UpdateProgressInfo
             {
@@ -236,12 +218,20 @@ namespace DocConverter.Services
             {
                 Percentage = 96,
                 StageTitle = "2/3 Dosya Doğrulanıyor...",
-                StageDescription = "Kurulum dosyası hazırlandı, çalıştırılıyor...",
+                StageDescription = "İndirilen dosyanın yayınlanan dosyayla aynı olduğu denetleniyor...",
                 BytesReceived = updateResult.SetupFileSize ?? 0,
                 TotalBytesToReceive = updateResult.SetupFileSize
             });
 
-            await Task.Delay(500, cancellationToken);
+            // Okumaya açık tutulur: doğrulanan dosya, çalıştırılana kadar değiştirilemez.
+            using var verified = new FileStream(destinationPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (!await MatchesAsync(verified, updateResult.SetupFileSize, updateResult.SetupSha256, cancellationToken))
+            {
+                verified.Dispose();
+                File.Delete(destinationPath);
+                throw new InvalidOperationException(
+                    "İndirilen kurulum dosyası doğrulanamadı; dosya silindi ve çalıştırılmadı. Lütfen yeniden deneyin.");
+            }
 
             progress.Report(new UpdateProgressInfo
             {
@@ -264,6 +254,52 @@ namespace DocConverter.Services
             {
                 Application.Current.Shutdown();
             });
+        }
+
+        /// <summary>Sürümün "…Setup.exe" adlı ve resmî depodan indirilen dosyası; yoksa null.</summary>
+        internal static GitHubReleaseAssetDto? SelectInstaller(GitHubReleaseDto release)
+        {
+            if (release.Assets == null)
+                return null;
+
+            foreach (GitHubReleaseAssetDto asset in release.Assets)
+            {
+                if (!string.IsNullOrWhiteSpace(asset.Name) &&
+                    asset.Name.EndsWith("Setup.exe", StringComparison.OrdinalIgnoreCase) &&
+                    IsTrustedInstallerUrl(asset.BrowserDownloadUrl))
+                    return asset;
+            }
+
+            return null;
+        }
+
+        internal static bool IsTrustedInstallerUrl(string? url) =>
+            !string.IsNullOrWhiteSpace(url) &&
+            url.StartsWith(TrustedDownloadPrefix, StringComparison.Ordinal) &&
+            Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed) &&
+            parsed.Scheme == Uri.UriSchemeHttps &&
+            string.Equals(parsed.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
+            parsed.AbsolutePath.EndsWith("Setup.exe", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>GitHub'ın dosya için bildirdiği "sha256:…" değerinden 64 haneli özeti çıkarır.</summary>
+        internal static string? ParseSha256Digest(string? digest)
+        {
+            const string prefix = "sha256:";
+            if (digest == null || !digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            string hex = digest.Substring(prefix.Length).Trim();
+            return hex.Length == 64 && hex.All(Uri.IsHexDigit) ? hex.ToLowerInvariant() : null;
+        }
+
+        internal static async Task<bool> MatchesAsync(Stream file, long? expectedSize, string expectedSha256, CancellationToken cancellationToken)
+        {
+            if (expectedSize is { } size && file.Length != size)
+                return false;
+
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            byte[] hash = await sha256.ComputeHashAsync(file, cancellationToken);
+            return string.Equals(Convert.ToHexString(hash), expectedSha256, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task DownloadFileWithProgressAsync(
