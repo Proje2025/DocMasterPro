@@ -17,9 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PdfiumViewer.WPF" Version="1.0.6" />
-    <PackageReference Include="PdfiumViewer.Native.x86.v8-xfa" Version="2018.4.8.256" PrivateAssets="all" />
-    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" PrivateAssets="all" />
+    <PackageReference Include="bblanchon.PDFium.Win32" Version="157.0.8086" />
     <PackageReference Include="PdfPig" Version="0.1.14" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

@@ -6,10 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Image = System.Drawing.Image;
-using DocConverter.Helpers;
 using DocConverter.Models;
-using PdfiumViewer.Core;
-using PdfiumViewer.Enums;
 using PixelFormat = System.Drawing.Imaging.PixelFormat;
 using Size = System.Windows.Size;
 
@@ -41,8 +38,7 @@ public class PdfViewerService
 
     public PdfViewerSession OpenSession(string pdfPath)
     {
-        PdfiumNativeLoader.EnsureLoaded();
-        return new PdfViewerSession(PdfDocument.Load(pdfPath));
+        return new PdfViewerSession(PdfiumDocument.Load(pdfPath));
     }
 
     public int GetPageCount(string pdfPath)
@@ -105,9 +101,7 @@ public class PdfViewerService
     /// </summary>
     public bool Print(string pdfPath)
     {
-        PdfiumNativeLoader.EnsureLoaded();
-
-        using var document = PdfDocument.Load(pdfPath);
+        using var document = PdfiumDocument.Load(pdfPath);
         if (document.PageCount == 0)
             return false;
 
@@ -140,12 +134,12 @@ public class PdfViewerService
     /// </summary>
     private sealed class PdfPrintPaginator : DocumentPaginator
     {
-        private readonly PdfDocument _document;
+        private readonly PdfiumDocument _document;
         private readonly int _first;
         private readonly int _last;
         private Size _paper;
 
-        public PdfPrintPaginator(PdfDocument document, Size paper, int first, int last)
+        public PdfPrintPaginator(PdfiumDocument document, Size paper, int first, int last)
         {
             _document = document;
             _paper = paper;
@@ -199,7 +193,7 @@ public class PdfViewerService
                        pixelHeight,
                        (float)PrintDpi,
                        (float)PrintDpi,
-                       PdfRenderFlags.Annotations | PdfRenderFlags.ForPrinting))
+                       PdfRenderOptions.Annotations | PdfRenderOptions.ForPrinting))
             {
                 source = ConvertToBitmapSource(image, PrintDpi);
             }
@@ -229,11 +223,11 @@ public class PdfViewerService
 
     public sealed class PdfViewerSession : IDisposable
     {
-        private readonly PdfDocument _document;
+        private readonly PdfiumDocument _document;
         private readonly object _syncRoot = new();
         private bool _disposed;
 
-        internal PdfViewerSession(PdfDocument document)
+        internal PdfViewerSession(PdfiumDocument document)
         {
             _document = document;
         }
@@ -312,7 +306,7 @@ public class PdfViewerService
                         pixelHeight,
                         (float)dpi,
                         (float)dpi,
-                        PdfRenderFlags.Annotations);
+                        PdfRenderOptions.Annotations);
 
                     BitmapSource source = ConvertToBitmapSource(image, dpi);
                     return new PdfRenderedPage(
@@ -355,7 +349,7 @@ public class PdfViewerService
                         height,
                         (float)ScreenDpi,
                         (float)ScreenDpi,
-                        PdfRenderFlags.Annotations);
+                        PdfRenderOptions.Annotations);
 
                     return ConvertToBitmapSource(image, ScreenDpi);
                 }
@@ -421,13 +415,11 @@ public class PdfViewerService
         }
     }
 
-    private static SizeF GetPageSize(PdfDocument document, int pageIndex)
+    private static SizeF GetPageSize(PdfiumDocument document, int pageIndex)
     {
         if (pageIndex < 0 || pageIndex >= document.PageCount)
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "Sayfa indeksi geçersiz.");
 
-        return document.PageSizes[pageIndex] is SizeF size && size.Width > 0 && size.Height > 0
-            ? size
-            : new SizeF(595, 842);
+        return document.GetPageSize(pageIndex);
     }
 }

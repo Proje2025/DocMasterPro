@@ -9,8 +9,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using DocConverter.Models;
-using PdfiumViewer.Core;
-using PdfiumViewer.Enums;
 using Image = System.Drawing.Image;
 
 namespace DocConverter.Services
@@ -29,7 +27,7 @@ namespace DocConverter.Services
 
         /// <summary>
         /// Seçili yazıcıya belge (PDF, Resim, Word/Office Dokümanı) yazdırır.
-        /// Windows GDI Spooler ve PdfiumViewer render motorunu kullanarak PCL/EMF standartlarında temiz çıktı üretir.
+        /// Windows GDI Spooler ve PDFium çizim motorunu kullanarak PCL/EMF standartlarında temiz çıktı üretir.
         /// </summary>
         public async Task<PrintResult> PrintDocumentAsync(
             DeviceInfo printer,
@@ -139,7 +137,7 @@ namespace DocConverter.Services
                     };
                 }
 
-                using var pdfDoc = PdfDocument.Load(pdfPath);
+                using var pdfDoc = PdfiumDocument.Load(pdfPath);
                 int totalPages = pdfDoc.PageCount;
                 int currentPageIndex = 0;
 
@@ -156,7 +154,7 @@ namespace DocConverter.Services
                     var printableArea = ev.MarginBounds;
                     float printDpi = 300f;
 
-                    var pageSize = pdfDoc.PageSizes[currentPageIndex] is SizeF sz ? sz : new SizeF(595, 842);
+                    var pageSize = pdfDoc.GetPageSize(currentPageIndex);
                     int renderWidth = Math.Max(1, (int)Math.Round(pageSize.Width * (printDpi / 72.0f)));
                     int renderHeight = Math.Max(1, (int)Math.Round(pageSize.Height * (printDpi / 72.0f)));
 
@@ -166,7 +164,7 @@ namespace DocConverter.Services
                         renderHeight,
                         printDpi,
                         printDpi,
-                        PdfRenderFlags.Annotations);
+                        PdfRenderOptions.Annotations);
 
                     if (options.FitToPage)
                     {

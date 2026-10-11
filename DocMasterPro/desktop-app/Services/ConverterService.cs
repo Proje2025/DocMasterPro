@@ -2,9 +2,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using DocConverter.Helpers;
-using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
-using PdfiumViewer.Enums;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using PdfSharpDoc = PdfSharp.Pdf.PdfDocument;
@@ -167,9 +164,7 @@ namespace DocConverter.Services
 
             await Task.Run(() =>
             {
-                PdfiumNativeLoader.EnsureLoaded();
-
-                using var pdfDoc = PdfiumDoc.Load(pdfPath);
+                using var pdfDoc = PdfiumDocument.Load(pdfPath);
                 int total = pdfDoc.PageCount;
 
                 if (total == 0)
@@ -183,7 +178,7 @@ namespace DocConverter.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var pageSize = pdfDoc.PageSizes[index] is System.Drawing.SizeF sz ? sz : new System.Drawing.SizeF(595, 842);
+                    var pageSize = pdfDoc.GetPageSize(index);
                     int renderWidth = Math.Max(1, (int)Math.Round(pageSize.Width * (dpi / 72.0f)));
                     int renderHeight = Math.Max(1, (int)Math.Round(pageSize.Height * (dpi / 72.0f)));
 
@@ -193,7 +188,7 @@ namespace DocConverter.Services
                         renderHeight,
                         dpi,
                         dpi,
-                        PdfRenderFlags.Annotations);
+                        PdfRenderOptions.Annotations);
 
                     string outputPath = Path.Combine(outputDir, $"{baseName}_sayfa{index + 1}.{format.ToLowerInvariant()}");
                     SaveRenderedImage(pageImage, outputPath, format);

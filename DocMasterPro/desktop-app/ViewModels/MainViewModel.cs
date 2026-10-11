@@ -13,8 +13,6 @@ using CommunityToolkit.Mvvm.Input;
 using DocConverter.Helpers;
 using DocConverter.Models;
 using DocConverter.Services;
-using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
-using PdfiumViewer.Enums;
 using Microsoft.Win32;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
@@ -1279,15 +1277,13 @@ namespace DocConverter.ViewModels
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                PdfiumNativeLoader.EnsureLoaded();
-
-                using var pdfDoc = PdfiumDoc.Load(pdfPath);
+                using var pdfDoc = PdfiumDocument.Load(pdfPath);
                 if (pageIndex < 0 || pageIndex >= pdfDoc.PageCount)
                     return null;
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var pageSize = pdfDoc.PageSizes[pageIndex] is System.Drawing.SizeF sz ? sz : new System.Drawing.SizeF(595, 842);
+                var pageSize = pdfDoc.GetPageSize(pageIndex);
 
                 double scale = (double)PdfPreviewDensityDpi / 72.0;
                 int width = Math.Max(1, (int)Math.Round(pageSize.Width * scale));
@@ -1308,7 +1304,7 @@ namespace DocConverter.ViewModels
                     height,
                     PdfPreviewDensityDpi,
                     PdfPreviewDensityDpi,
-                    PdfRenderFlags.Annotations);
+                    PdfRenderOptions.Annotations);
 
                 using var ms = new MemoryStream();
                 image.Save(ms, System.Drawing.Imaging.ImageFormat.Png);

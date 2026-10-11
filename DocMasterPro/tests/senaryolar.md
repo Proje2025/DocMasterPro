@@ -45,6 +45,23 @@ Gerçek LibreOffice ve gerçek Office gerektiren testler, ilgili program bulunam
 Ekranların yerleşimi (900×600, 1280×800, 1920×1080), renk kontrastı ve klavye kullanımı
 `DocMasterPro/tools/UiCheck` ile denetlenir.
 
+## PDF motoru (PDFium)
+
+| # | Senaryo | Test |
+|---|---------|------|
+| 31 | Uygulama güncel PDFium'u yükler; 2018'deki eski motor kullanılmaz | `PdfiumDocumentTests.Load_UsesCurrentPdfiumBuild` |
+| 32 | Sayfa boyutları sayfanın döndürmesiyle birlikte doğru okunur (dikey, yatay, 90° döndürülmüş) | `PdfiumDocumentTests.GetPageSize_ReturnsPointsWithPageRotationApplied` |
+| 33 | Sayfa opak beyaz zemin üzerine çizilir | `PdfiumDocumentTests.Render_DrawsPageContentOnOpaqueWhite` |
+| 34 | Doldurulmuş PDF formları ekranda, dışa aktarmada ve baskıda boş görünmez | `PdfiumDocumentTests.Render_DrawsFilledFormFieldsOnlyWithAnnotations` |
+| 35 | Başka programlarda eklenmiş notlar (vurgu, şekil, damga) görünür | `PdfiumDocumentTests.Render_DrawsMarkupAnnotationsOnlyWithAnnotations` |
+| 36 | Parola korumalı / bozuk / bulunamayan dosya → Türkçe, açıklayıcı hata | `PdfiumDocumentTests.Load_PasswordProtectedPdf_ThrowsClearMessage`, `Load_FileThatIsNotPdf_ThrowsFormatError`, `Load_MissingFile_ThrowsFileNotFound` |
+| 37 | Türkçe karakterli dosya adları açılır | `PdfiumDocumentTests.Load_TurkishFileName_Opens` |
+| 38 | Belge kapatılınca dosya serbest kalır; kapalı belge kullanılamaz | `PdfiumDocumentTests.Dispose_ReleasesFileAndRejectsFurtherUse` |
+| 39 | Aynı anda birçok iş parçacığından çizim, tek tek çizimle aynı sonucu verir | `PdfiumDocumentTests.Render_FromManyThreads_MatchesSequentialOutput` |
+
+PDF'teki JavaScript hiçbir zaman çalıştırılmaz: kullanılan PDFium derlemesinde JavaScript motoru yoktur ve belge
+açılış eylemleri tetiklenmez.
+
 ## Tarama, PDF ve diğer akışlar
 
 Bu akışların testleri `ScanAcquisitionTests`, `ScannedPdfBuilderTests`, `ScanImageCleanupTests`, `PdfServiceTests`,

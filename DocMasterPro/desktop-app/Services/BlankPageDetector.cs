@@ -2,9 +2,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using DocConverter.Helpers;
-using PdfiumDoc = PdfiumViewer.Core.PdfDocument;
-using PdfiumViewer.Enums;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using SixLabors.ImageSharp;
@@ -125,9 +122,7 @@ namespace DocConverter.Services
 
             return await Task.Run(() =>
             {
-                PdfiumNativeLoader.EnsureLoaded();
-
-                using var pdfDoc = PdfiumDoc.Load(inputPdfPath);
+                using var pdfDoc = PdfiumDocument.Load(inputPdfPath);
                 totalOriginalPages = pdfDoc.PageCount;
 
                 if (totalOriginalPages == 0)
@@ -142,7 +137,7 @@ namespace DocConverter.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var pageSize = pdfDoc.PageSizes[i] is System.Drawing.SizeF sz ? sz : new System.Drawing.SizeF(595, 842);
+                    var pageSize = pdfDoc.GetPageSize(i);
                     // Hızlı analiz için 100 DPI yeterlidir
                     int renderWidth = Math.Max(1, (int)Math.Round(pageSize.Width * (100f / 72.0f)));
                     int renderHeight = Math.Max(1, (int)Math.Round(pageSize.Height * (100f / 72.0f)));
@@ -150,7 +145,7 @@ namespace DocConverter.Services
                     bool isBlank = false;
                     try
                     {
-                        using var pageImage = pdfDoc.Render(i, renderWidth, renderHeight, 100f, 100f, PdfRenderFlags.None);
+                        using var pageImage = pdfDoc.Render(i, renderWidth, renderHeight, 100f, 100f, PdfRenderOptions.None);
                         using var ms = new MemoryStream();
                         pageImage.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
                         ms.Position = 0;

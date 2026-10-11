@@ -1,0 +1,2 @@
+# PDF dosyaları ikilidir: satır sonu dönüştürmesi xref konumlarını bozar.
+*.pdf binary

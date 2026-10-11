@@ -31,8 +31,7 @@ namespace DocConverter
             GlobalFontSettings.FontResolver = new WindowsFontResolver();
             WindowsFileAssociationService.RegisterPdfOpenWithForCurrentUser();
 
-            // PDFium'u baştan yükle: tek dosya (single-file) yayında PdfiumViewer kendi başına bulamaz ve
-            // ilk PDF işlemi yazdırma olursa "pdfium.dll yüklenemedi" hatası verirdi.
+            // PDFium'u baştan yükle: dosya eksikse sorun ilk PDF işleminde değil, açılışta günlüğe yazılır.
             try
             {
                 PdfiumNativeLoader.EnsureLoaded();
