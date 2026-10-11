@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- UpdateService sürümü giriş derlemesinden okur; uygulamadan yüksek olmalı ki "güncelleme var" penceresi açılmasın. -->
+    <Version>99.0.0</Version>
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\desktop-app\DocConverter.csproj" />
+  </ItemGroup>
+
+</Project>

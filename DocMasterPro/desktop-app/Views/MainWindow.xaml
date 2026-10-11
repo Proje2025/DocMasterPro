@@ -287,7 +287,7 @@
 
           <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="Word (.docx), Excel, PowerPoint dosyalarını PDF'e dönüştürün"
-                       FontSize="14" Foreground="Gray" Margin="0,0,0,8"/>
+                       FontSize="14" Foreground="#637083" Margin="0,0,0,8"/>
 
             <!-- Hangi dönüştürme motorunun kullanılacağı: Microsoft Office / LibreOffice / yok -->
             <Border CornerRadius="8" Padding="12,9" BorderThickness="1">
@@ -340,7 +340,7 @@
                         Visibility="{Binding OfficeEngine.CanRemove, Converter={StaticResource BoolToVis}}"
                         ToolTip="DocMaster Pro'nun indirdiği LibreOffice kopyasını siler ve disk alanını boşaltır"
                         Cursor="Hand" Background="Transparent" BorderThickness="0" Foreground="#1D4ED8" FontSize="12"
-                        Padding="6,2" MinWidth="0"/>
+                        Padding="8,3" MinWidth="0" MinHeight="24"/>
               </Grid>
             </Border>
           </StackPanel>
@@ -385,7 +385,7 @@
 
           <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="PDF dosyalarını Microsoft Word ile düzenlenebilir DOCX dosyasına dönüştürün"
-                       FontSize="14" Foreground="Gray"/>
+                       FontSize="14" Foreground="#637083"/>
 
             <!-- Word yoksa: bu özellik neden kullanılamıyor -->
             <Border CornerRadius="8" Padding="12,9" BorderThickness="1" Margin="0,8,0,0"
@@ -438,7 +438,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Text="PDF dosyalarını tek bir dosyada birleştirin (sürükle-bırak ile sıralayabilirsiniz)"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+                     FontSize="14" Foreground="#637083" Margin="0,0,0,12"/>
 
           <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
                   Background="#FAFAFA" AllowDrop="True"
@@ -482,7 +482,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Text="PDF dosyasını sayfa aralıklarına göre bölün"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+                     FontSize="14" Foreground="#637083" Margin="0,0,0,12"/>
 
           <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
             <Button Content="PDF Seç" Style="{StaticResource PrimaryButton}"
@@ -535,7 +535,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Text="JPG, PNG, BMP, GIF, TIFF, WEBP görüntülerini PDF'e dönüştürün"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+                     FontSize="14" Foreground="#637083" Margin="0,0,0,12"/>
 
           <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="2" CornerRadius="8"
                   Background="#FAFAFA" AllowDrop="True"
@@ -577,7 +577,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Text="PDF sayfalarını JPG veya PNG görüntülere dönüştürün"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+                     FontSize="14" Foreground="#637083" Margin="0,0,0,12"/>
 
           <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
             <Button Content="PDF Seç" Style="{StaticResource PrimaryButton}"
@@ -623,7 +623,7 @@
           </Grid.RowDefinitions>
 
           <TextBlock Grid.Row="0" Text="PDF dosyasını düzenleyin: sayfa silme, döndürme, sıralama, çıkarma"
-                     FontSize="14" Foreground="Gray" Margin="0,0,0,12"/>
+                     FontSize="14" Foreground="#637083" Margin="0,0,0,12"/>
 
           <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
@@ -817,7 +817,7 @@
           <TextBlock Grid.Row="0" Text="Uygulama güncellemeleri"
                      FontSize="20" FontWeight="SemiBold" Foreground="#172033" Margin="0,0,0,8"/>
           <TextBlock Grid.Row="1" Text="Yeni sürümler GitHub Releases üzerinden denetlenir. Güncelleme bulunduğunda indirip kurabilirsiniz."
-                     FontSize="14" Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                     FontSize="14" Foreground="#637083" TextWrapping="Wrap" Margin="0,0,0,16"/>
           <Button Grid.Row="2" Content="Güncellemeleri Denetle"
                   Style="{StaticResource PrimaryButton}"
                   Command="{Binding CheckForUpdatesCommand}"

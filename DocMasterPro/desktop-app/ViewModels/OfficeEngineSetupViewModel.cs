@@ -164,8 +164,9 @@ namespace DocConverter.ViewModels
             }
             catch (Exception ex)
             {
+                // Beklenmeyen hatanın ayrıntısı günlüğe yazılır; kullanıcıya ham sistem iletisi gösterilmez.
                 FileLogger.LogError("OfficeEngineSetup", ex);
-                ShowError(EngineSetupError.Unknown, ex.Message);
+                ShowError(EngineSetupError.Unknown, "");
             }
         }
 

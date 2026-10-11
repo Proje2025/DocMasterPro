@@ -90,6 +90,24 @@ public class OfficeEngineSetupTests
     }
 
     [Fact]
+    public async Task UnexpectedError_ShowsAGenericMessageNotTheRawExceptionText()
+    {
+        var installer = new ThrowingInstaller(
+            new UnauthorizedAccessException(@"Access to the path 'C:\Users\x\AppData\Local\DocMasterPro\engine' is denied."));
+        var vm = new OfficeEngineSetupViewModel(installer);
+        bool? closedWith = null;
+        vm.CloseRequested += (_, ready) => closedWith = ready;
+
+        await vm.StartCommand.ExecuteAsync(null);
+
+        vm.State.Should().Be(EngineSetupState.Failed);
+        vm.ErrorTitle.Should().Be("Hazırlanamadı");
+        vm.ErrorMessage.Should().Be("Beklenmeyen bir hata oluştu.", "ham sistem iletisi kullanıcıya gösterilmez, günlüğe yazılır");
+        vm.RetryCommand.CanExecute(null).Should().BeTrue();
+        closedWith.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Retry_AfterFailure_RunsAgainAndCanSucceed()
     {
         var installer = FastInstaller();
@@ -199,6 +217,20 @@ public class OfficeEngineSetupTests
     public void SizeText_UsesTurkishFormatting(long bytes, string expected)
     {
         SizeText.Format(bytes).Should().Be(expected);
+    }
+
+    /// <summary>Öngörülmeyen bir hatayla (EngineSetupException olmayan) başarısız olan kurulum.</summary>
+    private sealed class ThrowingInstaller : IOfficeEngineInstaller
+    {
+        private readonly Exception _error;
+
+        public ThrowingInstaller(Exception error) => _error = error;
+
+        public EngineSetupRequirements GetRequirements() =>
+            new("26.2.6", 373 * MB, 2048 * MB, 100L * 1024 * MB, "C:", "The Document Foundation");
+
+        public Task InstallAsync(IProgress<EngineSetupProgress> progress, CancellationToken cancellationToken) =>
+            Task.FromException(_error);
     }
 
     /// <summary>İptal edilene kadar bekleyen kurulum; ara durumları sınamak için.</summary>

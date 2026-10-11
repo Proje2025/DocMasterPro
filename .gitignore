@@ -43,3 +43,12 @@ DocMasterPro/artifacts/
 *.temp
 ~*
 Test_Ciktilari/
+
+# Yerel çalışma dosyaları (herkese açık depoya gönderilmez)
+.claude/
+INCELEME-RAPORU.md
+
+# Lisans anahtarları ve ortam dosyaları
+.env
+.env.*
+!.env.example
